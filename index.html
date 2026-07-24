@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rhein-Check · Mainz / Wiesbaden</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="styles.css?v=3">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">🎣</div>
+    <div>
+      <h1>Rhein-Check · Mainz / Wiesbaden</h1>
+      <div class="sub">Live-Bedingungen für Angler · Pegel km 498,3</div>
+    </div>
+  </div>
+  <div>
+    <div class="updated" id="updated">lädt …</div>
+    <button class="refresh" onclick="loadAll()">↻ Aktualisieren</button>
+  </div>
+</header>
+
+<div class="cond" id="cond">
+  <div class="dot lg-amber" id="condDot">…</div>
+  <div>
+    <div class="lvl" id="condLvl">Bedingungen werden ausgewertet …</div>
+    <div class="why" id="condWhy">Pegel, Luftdruck-Tendenz, Wind &amp; Niederschlag werden geladen.</div>
+  </div>
+</div>
+
+<button type="button" class="secttoggle" id="biteBtn" onclick="toggleBite()">🎯 Beißwetter anzeigen</button>
+<div id="biteBox" style="display:none"></div>
+
+<div class="sect">Fluss · Pegel Mainz (PEGELONLINE)</div>
+<div class="grid">
+  <div class="tile clickable" id="tilePegel" onclick="openChart('pegel')">
+    <div class="lbl"><span class="ico">📏</span> Pegelstand</div>
+    <div class="val" id="pegelVal">–</div>
+    <svg class="spark" id="pegelSpark" preserveAspectRatio="none" viewBox="0 0 100 34"></svg>
+    <div class="meta" id="pegelMeta">–</div>
+  </div>
+  <div class="tile clickable" onclick="openChart('durchfluss')">
+    <div class="lbl"><span class="ico">🌊</span> Durchfluss</div>
+    <div class="val" id="qVal">–</div>
+    <svg class="spark" id="qSpark" preserveAspectRatio="none" viewBox="0 0 100 34"></svg>
+    <div class="meta" id="qMeta">–</div>
+  </div>
+</div>
+
+<div class="sect">Wetter (Open-Meteo / DWD)</div>
+<div class="grid">
+  <div class="tile clickable" onclick="openChart('airTemp')">
+    <div class="lbl"><span class="ico">🌡️</span> Lufttemperatur</div>
+    <div class="val" id="airVal">–</div>
+    <div class="meta" id="airMeta">gefühlt –</div>
+  </div>
+  <div class="tile clickable" onclick="openChart('wind')">
+    <div class="lbl"><span class="ico">💨</span> Wind</div>
+    <div class="val" id="windVal">–</div>
+    <div class="meta" id="windMeta">Böen –</div>
+  </div>
+  <div class="tile clickable" onclick="openChart('rain')">
+    <div class="lbl"><span class="ico">🌧️</span> Niederschlag</div>
+    <div class="val" id="rainVal">–</div>
+    <div class="meta" id="rainMeta">heute –</div>
+  </div>
+  <div class="tile clickable" onclick="openChart('press')">
+    <div class="lbl"><span class="ico">📊</span> Luftdruck</div>
+    <div class="val" id="pressVal">–</div>
+    <div class="meta" id="pressMeta">Tendenz –</div>
+  </div>
+  <div class="tile clickable" onclick="openChart('cloud')">
+    <div class="lbl"><span class="ico">🌥️</span> Himmel</div>
+    <div class="val" id="skyVal" style="font-size:22px">–</div>
+    <div class="meta" id="skyMeta">Bewölkung – · Feuchte –</div>
+  </div>
+  <div class="tile">
+    <div class="lbl"><span class="ico">🌅</span> Sonne</div>
+    <div class="val" id="sunVal" style="font-size:20px">–</div>
+    <div class="meta" id="sunMeta">Auf – · Unter –</div>
+  </div>
+</div>
+
+<div class="sect">Wasserqualität · Messstation Mainz-Wiesbaden</div>
+<div class="grid" id="quality"></div>
+<div id="qStamp" style="font-size:11.5px;color:var(--muted2);margin:9px 4px 0">
+  Werte werden alle 3 Stunden aus dem RLP-Portal importiert. ·
+  <a href="https://geodaten-wasser.rlp-umwelt.de/gus/2511510500/messwerte" target="_blank" rel="noopener">Amtliche Live-Ansicht ↗</a>
+</div>
+
+<button type="button" class="secttoggle" id="fangbuchBtn" onclick="toggleFangbuch()">📒 Fangbuch anzeigen</button>
+<div id="fangbuchBox" style="display:none">
+<div class="sect" style="margin-top:10px">Neuen Fang eintragen</div>
+<div class="fbcard">
+  <div class="fbrow">
+    <div class="fbfield"><label>Fischart</label><input id="f_art" list="artliste" placeholder="z. B. Hecht"></div>
+    <div class="fbfield"><label>Größe (cm)</label><input id="f_groesse" type="number" min="0" step="1" inputmode="numeric"></div>
+    <div class="fbfield"><label>Gewicht (g, optional)</label><input id="f_gewicht" type="number" min="0" step="10" inputmode="numeric"></div>
+  </div>
+  <div class="fbrow">
+    <div class="fbfield"><label>Köder</label><input id="f_koeder" placeholder="z. B. Gummifisch 12 cm"></div>
+    <div class="fbfield"><label>Methode</label><input id="f_methode" list="methodeliste" placeholder="z. B. Spinnfischen"></div>
+    <div class="fbfield"><label>Gewässer</label><input id="f_gewaesser" value="Rhein (Mainz/Wiesbaden)"></div>
+  </div>
+  <div class="fbrow">
+    <div class="fbfield"><label>Datum</label><input id="f_datum" type="date"></div>
+    <div class="fbfield"><label>Uhrzeit</label><input id="f_zeit" type="time"></div>
+  </div>
+  <div class="fbrow">
+    <div class="fbfield fbwide"><label>Standort</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="fbbtn" id="gpsBtn" onclick="captureGps()" style="flex:1;min-width:150px">📍 Handy-Standort</button>
+        <button type="button" class="fbbtn" onclick="markOnMap()" style="flex:1;min-width:150px">🗺️ Auf Karte markieren</button>
+      </div>
+    </div>
+  </div>
+  <div class="fbrow">
+    <div class="fbfield fbwide"><label>Notiz</label><input id="f_notiz" placeholder="Beobachtungen, Stelle, Uhrzeit des Bisses …"></div>
+  </div>
+  <div id="gpsInfo" class="fbnote">Kein Standort gewählt – nutze die Handy-Ortung oder „Auf Karte markieren".</div>
+  <div class="fbactions">
+    <button type="button" class="fbsave" id="fbSaveBtn" onclick="saveCatch()">🎣 Fang speichern</button>
+    <span class="fbnote">Wetter, Wasserwerte &amp; Mondphase werden automatisch mitgespeichert.</span>
+  </div>
+</div>
+
+<datalist id="artliste">
+  <option>Hecht</option><option>Zander</option><option>Barsch</option><option>Rapfen</option>
+  <option>Wels</option><option>Aal</option><option>Karpfen</option><option>Brasse</option>
+  <option>Rotauge</option><option>Döbel</option><option>Barbe</option><option>Nase</option>
+  <option>Forelle</option><option>Schleie</option><option>Güster</option><option>Kaulbarsch</option>
+</datalist>
+<datalist id="methodeliste">
+  <option>Spinnfischen</option><option>Grundangeln</option><option>Posenangeln</option>
+  <option>Feedern</option><option>Fliegenfischen</option><option>Ansitz</option>
+</datalist>
+
+<div class="fbtoolbar">
+  <span id="fbCount" class="fbnote">0 Fänge gespeichert</span>
+  <div class="fbtools">
+    <button type="button" class="fbtool" id="listBtn" onclick="toggleList()">Fänge anzeigen</button>
+    <button type="button" class="fbtool" id="tblBtn" onclick="toggleTable()">📋 Tabelle anzeigen</button>
+    <button type="button" class="fbtool" onclick="exportJSON()">⬇ JSON</button>
+    <button type="button" class="fbtool" onclick="exportCSV()">⬇ CSV</button>
+    <button type="button" class="fbtool" onclick="document.getElementById('importFile').click()">⬆ Import</button>
+    <input type="file" id="importFile" accept="application/json,.json" style="display:none" onchange="importJSON(event)">
+  </div>
+</div>
+<div id="fbTable" style="display:none"></div>
+<div id="fbList" style="display:none"></div>
+</div>
+
+<div class="sect">Karte · Station &amp; deine Fänge</div>
+<div class="mapcard">
+  <div class="mapmeta">
+    <div>
+      <div class="co">📍 Messstation 50.0068° N, 8.2795° O</div>
+      <div class="pos">Tippe auf die Karte, um den Fangort zu setzen · Blau: Messstation · Grün: Fänge · Gelb: gewählter Ort</div>
+    </div>
+    <div class="btns">
+      <button onclick="copyCoords()" id="copyBtn">Koordinaten kopieren</button>
+      <a class="b" target="_blank" rel="noopener" href="https://www.openstreetmap.org/?mlat=50.0068&mlon=8.2795#map=15/50.0068/8.2795">OpenStreetMap ↗</a>
+      <a class="b" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=50.0068,8.2795">Google Maps ↗</a>
+    </div>
+  </div>
+  <div id="markHint" style="display:none;padding:10px 14px;font-size:13px;background:rgba(56,189,248,.14);color:var(--water);border-bottom:1px solid var(--line)"></div>
+  <div id="map"></div>
+</div>
+
+<footer>
+  <div><strong>Datenquellen:</strong>
+    Pegel &amp; Durchfluss: <a href="https://pegelonline.wsv.de" target="_blank" rel="noopener">PEGELONLINE (WSV)</a> ·
+    Wetter: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo (DWD)</a> ·
+    Wasserqualität: <a href="https://geodaten-wasser.rlp-umwelt.de/gus/2511510500/messwerte" target="_blank" rel="noopener">Messstation Mainz-Wiesbaden (LfU RLP / HLNUG)</a>.
+  </div>
+  <div style="margin-top:6px">Ungeprüfte Rohdaten – ohne Gewähr für Aktualität, Richtigkeit und Vollständigkeit. Die Angel-Ampel ist eine grobe Faustregel, keine Fangprognose. Petri Heil!</div>
+  <div style="margin-top:6px">Dein Fangbuch wird nur lokal in diesem Browser gespeichert – nichts wird hochgeladen. Für ein Backup oder eine spätere Auswertung nutze den Export als JSON oder CSV.</div>
+</footer>
+
+<div id="chartModal" class="cmodal" style="display:none" onclick="if(event.target===this)closeChart()">
+  <div class="cmbox">
+    <div class="cmhead"><span id="cmTitle"></span><button class="cmx" onclick="closeChart()" aria-label="Schließen">✕</button></div>
+    <div class="cmtabs"><button id="cmt24" onclick="setChartRange('24h')">24 Stunden</button><button id="cmt7" onclick="setChartRange('7d')">7 Tage</button></div>
+    <div class="cmcanvas"><canvas id="cmChart"></canvas></div>
+    <div id="cmMeta" class="fbnote"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="app.js?v=3"></script>
+</body>
+</html>
