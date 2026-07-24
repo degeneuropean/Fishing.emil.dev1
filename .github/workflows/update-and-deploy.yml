@@ -1,14 +1,12 @@
-name: Wasserwerte aktualisieren und Seite veröffentlichen
+name: Daten aktualisieren und GitHub Pages veröffentlichen
 
 on:
   push:
     branches:
       - main
-
   schedule:
+    # Alle sechs Stunden. GitHub Actions verwendet für Cron-Zeiten UTC.
     - cron: "17 */6 * * *"
-      timezone: "Europe/Berlin"
-
   workflow_dispatch:
 
 permissions:
@@ -18,48 +16,59 @@ permissions:
 
 concurrency:
   group: github-pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
+    name: Daten aktualisieren und Seite bauen
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Repository laden
         uses: actions/checkout@v6
 
       - name: Python vorbereiten
-        if: github.event_name != 'push'
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
 
-      - name: Playwright installieren
-        if: github.event_name != 'push'
+      - name: Browser für den Datenabruf installieren
         run: |
-          pip install playwright
-          playwright install --with-deps chromium
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
 
       - name: Wasserwerte aktualisieren
-        if: github.event_name != 'push'
         run: python fetch_wasserwerte.py
 
-      - name: Seite vorbereiten
+      - name: Aktualisierte Daten prüfen
         run: |
-          mkdir _site
-          cp index.html wasserwerte.json _site/
+          python -m json.tool wasserwerte.json > /dev/null
+          test -s wasserwerte.json
+
+      - name: Veröffentlichbare Seite zusammenstellen
+        run: |
+          mkdir -p _site
+          cp index.html app.js styles.css wasserwerte.json _site/
+          touch _site/.nojekyll
 
       - name: GitHub Pages vorbereiten
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Seite hochladen
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
   deploy:
+    name: Seite veröffentlichen
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     environment:
       name: github-pages
