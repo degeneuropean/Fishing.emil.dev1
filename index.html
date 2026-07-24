@@ -3,17 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rhein-Check · Mainz / Wiesbaden</title>
+<title>Rhein-Check · Live-Daten für den deutschen Rhein</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="styles.css?v=3">
+<link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
 <header>
   <div class="brand">
     <div class="logo">🎣</div>
     <div>
-      <h1>Rhein-Check · Mainz / Wiesbaden</h1>
-      <div class="sub">Live-Bedingungen für Angler · Pegel km 498,3</div>
+      <h1>Rhein-Check · Deutscher Rhein</h1>
+      <div class="sub" id="headerSub">Live-Bedingungen für deinen gewählten Angelbereich</div>
     </div>
   </div>
   <div>
@@ -21,6 +21,62 @@
     <button class="refresh" onclick="loadAll()">↻ Aktualisieren</button>
   </div>
 </header>
+
+<div class="spotcard">
+  <div class="spothead">
+    <div>
+      <div class="eyebrow">Dein Angelbereich</div>
+      <h2 id="spotTitle">Mainz / Wiesbaden</h2>
+      <div class="spotdetail" id="spotDetail">Rhein-km 498,3 · passende Messstellen werden geladen …</div>
+    </div>
+    <button type="button" class="favbtn" id="favoriteBtn" onclick="toggleFavorite()">☆ Als Favorit speichern</button>
+  </div>
+  <div class="stationcontrols">
+    <label>
+      <span>Angelbereich über Station</span>
+      <select id="areaStationSelect" onchange="selectAreaStation(this.value)" aria-label="Angelbereich über eine Station auswählen">
+        <option value="">Stationen werden geladen …</option>
+      </select>
+    </label>
+    <label>
+      <span>Pegelstation für die Daten</span>
+      <select id="gaugeSelect" onchange="overrideGauge(this.value)" aria-label="Pegelstation für die Daten auswählen">
+        <option value="">Stationen werden geladen …</option>
+      </select>
+    </label>
+    <label>
+      <span>Gütestation für die Daten</span>
+      <select id="qualitySelect" onchange="overrideQuality(this.value)" aria-label="Gütestation für die Daten auswählen">
+        <option value="">Stationen werden geladen …</option>
+      </select>
+    </label>
+    <label>
+      <span>Gespeicherte Angelbereiche</span>
+      <select id="favoriteSelect" onchange="selectFavorite(this.value)" aria-label="Favorisierten Angelbereich auswählen">
+        <option value="">Noch keine Favoriten</option>
+      </select>
+    </label>
+    <button type="button" class="autobtn" onclick="resetToAutomaticStations()">↺ Nächste Stationen verwenden</button>
+  </div>
+  <div class="selectionnote" id="selectionNote">
+    Tippe deinen Angelplatz auf der Karte an – dafür ist keine Standortfreigabe nötig.
+  </div>
+  <div class="mapcard">
+    <div class="mapmeta">
+      <div>
+        <div class="co" id="mapCoords">📍 50.0040° N, 8.2710° O</div>
+        <div class="pos">Gelb: Angelbereich · Blau: Pegel · Türkis: Güte · Grau: derzeit ohne Wert · Grün: gespeicherte Fänge</div>
+      </div>
+      <div class="btns">
+        <button type="button" onclick="copyCoords()" id="copyBtn">Koordinaten kopieren</button>
+        <a class="b" id="spotOsmLink" target="_blank" rel="noopener" href="https://www.openstreetmap.org/?mlat=50.004&mlon=8.271#map=14/50.004/8.271">OpenStreetMap ↗</a>
+        <a class="b" id="spotGoogleLink" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=50.004,8.271">Google Maps ↗</a>
+      </div>
+    </div>
+    <div id="markHint" style="display:none;padding:10px 14px;font-size:13px;background:rgba(56,189,248,.14);color:var(--water);border-bottom:1px solid var(--line)"></div>
+    <div id="map"></div>
+  </div>
+</div>
 
 <div class="cond" id="cond">
   <div class="dot lg-amber" id="condDot">…</div>
@@ -33,7 +89,7 @@
 <button type="button" class="secttoggle" id="biteBtn" onclick="toggleBite()">🎯 Beißwetter anzeigen</button>
 <div id="biteBox" style="display:none"></div>
 
-<div class="sect">Fluss · Pegel Mainz (PEGELONLINE)</div>
+<div class="sect" id="riverHeading">Fluss · Pegel Mainz (PEGELONLINE)</div>
 <div class="grid">
   <div class="tile clickable" id="tilePegel" onclick="openChart('pegel')">
     <div class="lbl"><span class="ico">📏</span> Pegelstand</div>
@@ -49,7 +105,7 @@
   </div>
 </div>
 
-<div class="sect">Wetter (Open-Meteo / DWD)</div>
+<div class="sect" id="weatherHeading">Wetter am Angelbereich (Open-Meteo / DWD)</div>
 <div class="grid">
   <div class="tile clickable" onclick="openChart('airTemp')">
     <div class="lbl"><span class="ico">🌡️</span> Lufttemperatur</div>
@@ -83,11 +139,10 @@
   </div>
 </div>
 
-<div class="sect">Wasserqualität · Messstation Mainz-Wiesbaden</div>
+<div class="sect" id="qualityHeading">Wasserqualität · Messstation Mainz-Wiesbaden</div>
 <div class="grid" id="quality"></div>
 <div id="qStamp" style="font-size:11.5px;color:var(--muted2);margin:9px 4px 0">
-  Werte werden alle 3 Stunden aus dem RLP-Portal importiert. ·
-  <a href="https://geodaten-wasser.rlp-umwelt.de/gus/2511510500/messwerte" target="_blank" rel="noopener">Amtliche Live-Ansicht ↗</a>
+  Die amtlichen Werte werden automatisch aktualisiert.
 </div>
 
 <button type="button" class="secttoggle" id="fangbuchBtn" onclick="toggleFangbuch()">📒 Fangbuch anzeigen</button>
@@ -102,7 +157,7 @@
   <div class="fbrow">
     <div class="fbfield"><label>Köder</label><input id="f_koeder" placeholder="z. B. Gummifisch 12 cm"></div>
     <div class="fbfield"><label>Methode</label><input id="f_methode" list="methodeliste" placeholder="z. B. Spinnfischen"></div>
-    <div class="fbfield"><label>Gewässer</label><input id="f_gewaesser" value="Rhein (Mainz/Wiesbaden)"></div>
+    <div class="fbfield"><label>Gewässer</label><input id="f_gewaesser" value="Rhein"></div>
   </div>
   <div class="fbrow">
     <div class="fbfield"><label>Datum</label><input id="f_datum" type="date"></div>
@@ -152,28 +207,11 @@
 <div id="fbList" style="display:none"></div>
 </div>
 
-<div class="sect">Karte · Station &amp; deine Fänge</div>
-<div class="mapcard">
-  <div class="mapmeta">
-    <div>
-      <div class="co">📍 Messstation 50.0068° N, 8.2795° O</div>
-      <div class="pos">Tippe auf die Karte, um den Fangort zu setzen · Blau: Messstation · Grün: Fänge · Gelb: gewählter Ort</div>
-    </div>
-    <div class="btns">
-      <button onclick="copyCoords()" id="copyBtn">Koordinaten kopieren</button>
-      <a class="b" target="_blank" rel="noopener" href="https://www.openstreetmap.org/?mlat=50.0068&mlon=8.2795#map=15/50.0068/8.2795">OpenStreetMap ↗</a>
-      <a class="b" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=50.0068,8.2795">Google Maps ↗</a>
-    </div>
-  </div>
-  <div id="markHint" style="display:none;padding:10px 14px;font-size:13px;background:rgba(56,189,248,.14);color:var(--water);border-bottom:1px solid var(--line)"></div>
-  <div id="map"></div>
-</div>
-
 <footer>
   <div><strong>Datenquellen:</strong>
     Pegel &amp; Durchfluss: <a href="https://pegelonline.wsv.de" target="_blank" rel="noopener">PEGELONLINE (WSV)</a> ·
     Wetter: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo (DWD)</a> ·
-    Wasserqualität: <a href="https://geodaten-wasser.rlp-umwelt.de/gus/2511510500/messwerte" target="_blank" rel="noopener">Messstation Mainz-Wiesbaden (LfU RLP / HLNUG)</a>.
+    Wasserqualität: amtliche Landesmessnetze von Baden-Württemberg, Rheinland-Pfalz und Nordrhein-Westfalen; die konkrete Quelle steht an der gewählten Station.
   </div>
   <div style="margin-top:6px">Ungeprüfte Rohdaten – ohne Gewähr für Aktualität, Richtigkeit und Vollständigkeit. Die Angel-Ampel ist eine grobe Faustregel, keine Fangprognose. Petri Heil!</div>
   <div style="margin-top:6px">Dein Fangbuch wird nur lokal in diesem Browser gespeichert – nichts wird hochgeladen. Für ein Backup oder eine spätere Auswertung nutze den Export als JSON oder CSV.</div>
@@ -190,6 +228,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

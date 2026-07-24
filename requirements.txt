@@ -1,1 +1,1 @@
-playwright>=1.50,<2
+# Der Datenabruf verwendet ausschließlich die Python-Standardbibliothek.

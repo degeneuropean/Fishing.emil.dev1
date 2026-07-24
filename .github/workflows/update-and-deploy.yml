@@ -4,54 +4,62 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "data/**"
+      - "wasserwerte.json"
   schedule:
     # Alle sechs Stunden. GitHub Actions verwendet für Cron-Zeiten UTC.
     - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
   group: github-pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
     name: Daten aktualisieren und Seite bauen
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Repository laden
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Python vorbereiten
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-          cache: pip
 
-      - name: Browser für den Datenabruf installieren
+      - name: Wasser- und Pegeldaten aktualisieren
+        run: python update_data.py
+
+      - name: Datenbestand prüfen
+        run: python update_data.py --validate-only
+
+      - name: Aktualisierte Messdaten sichern
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
-
-      - name: Wasserwerte aktualisieren
-        run: python fetch_wasserwerte.py
-
-      - name: Aktualisierte Daten prüfen
-        run: |
-          python -m json.tool wasserwerte.json > /dev/null
-          test -s wasserwerte.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/stations.json data/quality wasserwerte.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Messdaten automatisch aktualisiert [skip ci]"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
 
       - name: Veröffentlichbare Seite zusammenstellen
         run: |
           mkdir -p _site
           cp index.html app.js styles.css wasserwerte.json _site/
+          cp -R data _site/data
           touch _site/.nojekyll
 
       - name: GitHub Pages vorbereiten

@@ -1,16 +1,244 @@
 "use strict";
 
-/* Wasserqualitäts-Werte werden beim Laden aus wasserwerte.json geholt.
-   Die GitHub-Action aktualisiert diese Datei alle 3 Stunden. Nur Startwert: */
+/* Die GitHub-Action erzeugt einen Stationskatalog und je Gütestation eine
+   eigene JSON-Datei. Dieser Startwert hält die Oberfläche auch offline stabil. */
 window.WQ_DATA = { "updated": "", "items": [] };
 
-const RHEIN_UUID = "a37a9aa3-45e9-4d90-9df6-109f3a28a5af"; // Pegel MAINZ, Rhein
-const LAT = 50.004, LON = 8.271;
-const STATION = {lat:50.0068, lon:8.2795};
-const PO = "https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/" + RHEIN_UUID;
+const PEGELONLINE_BASE = "https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/";
+const SELECTION_KEY = "rheincheck_auswahl_v2";
+const FAVORITES_KEY = "rheincheck_favoriten_v1";
+const MAINZ_GAUGE_ID = "a37a9aa3-45e9-4d90-9df6-109f3a28a5af";
+const DEFAULT_SPOT = {lat:50.004, lon:8.271, km:498.27, label:"Mainz / Wiesbaden", distanceToRhineKm:0};
+const FALLBACK_CATALOG = {
+  gauges:[{
+    id:MAINZ_GAUGE_ID, name:"MAINZ", latitude:50.003995, longitude:8.275319,
+    riverKm:498.27, series:["W","Q"], characteristicValues:{MNW:159,MW:288,MHW:547}
+  }],
+  qualityStations:[{
+    id:"quality-rlp-2511510500", slug:"mainz-wiesbaden", name:"Mainz-Wiesbaden",
+    latitude:50.0068, longitude:8.2795, riverKm:498.5, provider:"LfU RLP / HLNUG",
+    dataUrl:"wasserwerte.json",
+    sourceUrl:"https://geodaten-wasser.rlp-umwelt.de/gus/2511510500/messwerte"
+  }]
+};
+
+let CATALOG = {gauges:[], qualityStations:[]};
+let APP_SELECTION = {
+  spot:Object.assign({},DEFAULT_SPOT),
+  gaugeId:MAINZ_GAUGE_ID,
+  qualityId:"quality-rlp-2511510500",
+  spotSource:"default",
+  spotStationId:"",
+  manualGauge:false,
+  manualQuality:false
+};
+let SELECTION_VERSION = 0;
 
 const $ = id => document.getElementById(id);
 const fmt = (n,d=0) => (n==null||isNaN(n)) ? "–" : Number(n).toLocaleString("de-DE",{minimumFractionDigits:d,maximumFractionDigits:d});
+const num = v => {
+  if(v==null || v==="") return null;
+  if(typeof v==="number") return Number.isFinite(v) ? v : null;
+  const s=String(v).trim().replace(/\s/g,"");
+  const normalized=s.includes(",") ? s.replace(/\./g,"").replace(",",".") : s;
+  const n=Number.parseFloat(normalized);
+  return Number.isFinite(n) ? n : null;
+};
+function safeHttpUrl(value){
+  try{
+    const u=new URL(String(value||""),location.href);
+    return u.protocol==="https:"||u.protocol==="http:"?u.href:"";
+  }catch(_){ return ""; }
+}
+const coord = (o, a, b) => num(o && (o[a] != null ? o[a] : o[b]));
+const byId = (arr,id) => arr.find(x=>String(x.id)===String(id));
+const currentGauge = () => byId(CATALOG.gauges,APP_SELECTION.gaugeId) || CATALOG.gauges[0] || FALLBACK_CATALOG.gauges[0];
+const currentQuality = () => byId(CATALOG.qualityStations,APP_SELECTION.qualityId) || CATALOG.qualityStations[0] || FALLBACK_CATALOG.qualityStations[0];
+
+function seriesNames(g){
+  if(!g) return [];
+  if(Array.isArray(g.series)) return g.series.map(x=>typeof x==="string"?x:(x.shortname||x.name||x.type)).filter(Boolean);
+  if(g.series && typeof g.series==="object") return Object.entries(g.series).filter(([,v])=>v!=null&&v!==false).map(([k])=>k);
+  if(Array.isArray(g.timeseries)) return g.timeseries.map(x=>x.shortname||x.name||x.type).filter(Boolean);
+  return [];
+}
+function supportsSeries(g,name){ return seriesNames(g).map(String).map(x=>x.toUpperCase()).includes(name); }
+function normalizeGauge(g){
+  const id=g.id||g.uuid, latitude=coord(g,"latitude","lat"), longitude=coord(g,"longitude","lon");
+  const riverKm=num(g.riverKm!=null?g.riverKm:(g.km!=null?g.km:g.km));
+  return Object.assign({},g,{
+    id:String(id||""), name:g.name||g.shortname||"Rheinpegel",
+    latitude, longitude, riverKm,
+    series:g.series||g.timeseries||[]
+  });
+}
+function normalizeQuality(q){
+  const meta=q.stationMeta||{};
+  const id=q.id||q.slug||meta.id||meta.providerStationId;
+  const slug=q.slug||String(id||"station").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+  return Object.assign({},q,{
+    id:String(id||slug), slug,
+    name:q.name||q.station||meta.name||"Gütestation",
+    latitude:coord(q,"latitude","lat") ?? coord(meta,"latitude","lat"),
+    longitude:coord(q,"longitude","lon") ?? coord(meta,"longitude","lon"),
+    riverKm:num(q.riverKm!=null?q.riverKm:(q.km!=null?q.km:meta.riverKm)),
+    provider:q.provider||meta.provider||"amtliches Messnetz",
+    dataUrl:q.dataUrl||q.data||("data/quality/"+slug+".json"),
+    sourceUrl:q.sourceUrl||q.url||""
+  });
+}
+function normalizeCatalog(raw){
+  const all=raw||{};
+  let gauges=(all.gauges||all.pegelStations||all.stations||[]).filter(Boolean);
+  if(gauges.some(x=>x.type)) gauges=gauges.filter(x=>!x.type||x.type==="gauge"||x.type==="pegel");
+  let quality=(all.qualityStations||all.quality||all.gueteStations||[]).filter(Boolean);
+  if(!quality.length && Array.isArray(all.stations)) quality=all.stations.filter(x=>x.type==="quality"||x.type==="guete");
+  gauges=gauges.map(normalizeGauge).filter(x=>x.id&&x.latitude!=null&&x.longitude!=null).sort((a,b)=>(a.riverKm??9999)-(b.riverKm??9999));
+  quality=quality.map(normalizeQuality).filter(x=>x.id&&x.latitude!=null&&x.longitude!=null);
+  return {
+    gauges:gauges.length?gauges:FALLBACK_CATALOG.gauges.map(normalizeGauge),
+    qualityStations:quality.length?quality:FALLBACK_CATALOG.qualityStations.map(normalizeQuality),
+    updated:all.updated||all.generatedAt||""
+  };
+}
+
+function loadStoredSelection(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(SELECTION_KEY));
+    if(saved&&saved.spot&&num(saved.spot.lat)!=null&&num(saved.spot.lon)!=null){
+      APP_SELECTION=Object.assign({},APP_SELECTION,saved,{spot:Object.assign({},DEFAULT_SPOT,saved.spot,{
+        lat:num(saved.spot.lat),lon:num(saved.spot.lon),
+        km:num(saved.spot.km),distanceToRhineKm:num(saved.spot.distanceToRhineKm)
+      })});
+    }
+  }catch(_){}
+}
+function persistSelection(){
+  try{ localStorage.setItem(SELECTION_KEY,JSON.stringify(APP_SELECTION)); }catch(_){}
+}
+function haversineKm(a,b){
+  const rad=x=>x*Math.PI/180, dLat=rad(b.lat-a.lat), dLon=rad(b.lon-a.lon);
+  const s=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLon/2)**2;
+  return 6371*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
+}
+function nearestByDistance(list,spot){
+  return list.reduce((best,x)=>{
+    const d=haversineKm(spot,{lat:x.latitude,lon:x.longitude});
+    return !best||d<best.d?{item:x,d}:best;
+  },null);
+}
+function nearestByRiverKm(list,km,spot){
+  const usable=list.filter(x=>x.fetchState!=="unavailable");
+  const candidates=usable.length?usable:list;
+  if(km!=null){
+    const withKm=candidates.filter(x=>x.riverKm!=null);
+    if(withKm.length) return withKm.reduce((best,x)=>{
+      const d=Math.abs(x.riverKm-km);
+      const tiedUpstream=best&&Math.abs(d-best.d)<0.0001&&x.riverKm<=km&&best.item.riverKm>km;
+      return !best||d<best.d||tiedUpstream?{item:x,d}:best;
+    },null);
+  }
+  return nearestByDistance(candidates,spot);
+}
+function projectPointToSegment(point,a,b){
+  const lat0=point.lat*Math.PI/180, sx=111.32*Math.cos(lat0), sy=110.57;
+  const px=point.lon*sx, py=point.lat*sy, ax=a.lon*sx, ay=a.lat*sy, bx=b.lon*sx, by=b.lat*sy;
+  const dx=bx-ax, dy=by-ay, den=dx*dx+dy*dy;
+  const t=den?Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/den)):0;
+  const lon=(ax+t*dx)/sx, lat=(ay+t*dy)/sy;
+  return {lat,lon,t,distanceKm:Math.hypot(px-(ax+t*dx),py-(ay+t*dy))};
+}
+function projectToRhine(lat,lon){
+  const route=CATALOG.gauges.filter(g=>g.riverKm!=null).sort((a,b)=>a.riverKm-b.riverKm);
+  const p={lat:+lat,lon:+lon};
+  if(route.length<2){
+    const n=nearestByDistance(CATALOG.gauges,p);
+    return {km:n&&n.item.riverKm, distanceKm:n?n.d:null, lat:p.lat, lon:p.lon};
+  }
+  let best=null;
+  for(let i=0;i<route.length-1;i++){
+    const a=route[i],b=route[i+1];
+    const x=projectPointToSegment(p,{lat:a.latitude,lon:a.longitude},{lat:b.latitude,lon:b.longitude});
+    if(!best||x.distanceKm<best.distanceKm){
+      best=Object.assign(x,{km:a.riverKm+x.t*(b.riverKm-a.riverKm)});
+    }
+  }
+  return best;
+}
+function stationLabel(name){
+  return String(name||"Rhein").toLowerCase().replace(/(^|[\s-])([a-zäöü])/g,(_,p,c)=>p+c.toUpperCase());
+}
+function resolveSelection(lat,lon,options){
+  const opt=options||{}, projected=projectToRhine(lat,lon), spot={lat:+lat,lon:+lon};
+  spot.km=projected&&projected.km!=null?+projected.km.toFixed(2):null;
+  spot.distanceToRhineKm=projected&&projected.distanceKm!=null?+projected.distanceKm.toFixed(1):null;
+  const nearestGauge=nearestByRiverKm(CATALOG.gauges,spot.km,spot);
+  const nearestQuality=nearestByRiverKm(CATALOG.qualityStations,spot.km,spot);
+  const labelSource=nearestGauge&&nearestGauge.item;
+  spot.label=opt.label||("Nähe "+stationLabel(labelSource&&labelSource.name));
+  return {
+    spot,
+    gaugeId:opt.gaugeId||(nearestGauge&&nearestGauge.item.id)||APP_SELECTION.gaugeId,
+    qualityId:opt.qualityId||(nearestQuality&&nearestQuality.item.id)||APP_SELECTION.qualityId,
+    spotSource:opt.source||"map",
+    spotStationId:opt.spotStationId||"",
+    manualGauge:!!opt.gaugeId,
+    manualQuality:!!opt.qualityId
+  };
+}
+function clearHistoryCache(){
+  Object.keys(HIST).forEach(k=>delete HIST[k]);
+  if(CHART_KEY) closeChart();
+}
+function resetLiveTiles(){
+  [["pegelVal","–"],["qVal","–"],["pegelMeta","lädt …"],["qMeta","lädt …"],
+   ["airVal","–"],["airMeta","lädt …"],["windVal","–"],["windMeta","lädt …"],
+   ["rainVal","–"],["rainMeta","lädt …"],["pressVal","–"],["pressMeta","lädt …"],
+   ["skyVal","–"],["skyMeta","lädt …"],["sunVal","–"],["sunMeta","lädt …"]]
+    .forEach(([id,text])=>{ if($(id)) $(id).textContent=text; });
+  if($("quality")) $("quality").innerHTML='<div class="qtile"><div class="lbl">🌡️ Wasserqualität</div><div class="hint">Werte der gewählten Station werden geladen …</div></div>';
+}
+function setFishingSpot(lat,lon,options){
+  cancelMarking();
+  APP_SELECTION=resolveSelection(lat,lon,options);
+  SELECTION_VERSION++;
+  persistSelection();
+  clearHistoryCache();
+  updateSelectionUI(!!(options&&options.pan));
+  resetLiveTiles();
+  loadAll();
+}
+function selectAreaStation(id){
+  const g=byId(CATALOG.gauges,id); if(!g) return;
+  setFishingSpot(g.latitude,g.longitude,{label:"Bei "+stationLabel(g.name),pan:true,source:"station",spotStationId:g.id});
+}
+function useQualityAsSpot(id){
+  const q=byId(CATALOG.qualityStations,id); if(!q) return;
+  setFishingSpot(q.latitude,q.longitude,{label:"Bei "+stationLabel(q.name),pan:true,source:"station"});
+}
+function changeStationOverride(kind,id){
+  cancelMarking();
+  const spot=APP_SELECTION.spot;
+  const list=kind==="gauge"?CATALOG.gauges:CATALOG.qualityStations;
+  const nearest=nearestByRiverKm(list,spot.km,spot);
+  if(id&&!byId(list,id)) return;
+  if(kind==="gauge"){
+    APP_SELECTION.gaugeId=id||(nearest&&nearest.item.id)||APP_SELECTION.gaugeId;
+    APP_SELECTION.manualGauge=!!id;
+  }else{
+    APP_SELECTION.qualityId=id||(nearest&&nearest.item.id)||APP_SELECTION.qualityId;
+    APP_SELECTION.manualQuality=!!id;
+  }
+  SELECTION_VERSION++;
+  persistSelection(); clearHistoryCache(); updateSelectionUI(false); resetLiveTiles(); loadAll();
+}
+function overrideGauge(id){ changeStationOverride("gauge",id); }
+function overrideQuality(id){ changeStationOverride("quality",id); }
+function resetToAutomaticStations(){
+  cancelMarking();
+  const s=APP_SELECTION.spot;
+  setFishingSpot(s.lat,s.lon,{label:s.label,pan:false,source:APP_SELECTION.spotSource,spotStationId:APP_SELECTION.spotStationId});
+}
 
 // Klassifizierungs-Farbe -> CSS-Farbe für den Kachelstreifen
 function stripeColor(c){
@@ -75,47 +303,81 @@ const state = {pegelTrend:null, gust:null, rainNow:null, wcode:null, pressTrend:
 const snap = { weather:null, pegel:null, q:null };  // Momentaufnahme für Fänge
 let CURRENT_GPS = null;
 
-// Amtliche Hauptwerte Pegel Mainz (Zeitreihe 2010–2020, Quelle: PEGELONLINE), in cm
-const PEGEL_REF = { MNW:159, MW:288, MHW:547 };
-function classifyPegel(w){
-  const {MNW,MW,MHW}=PEGEL_REF;
+function characteristicValues(gauge){
+  const direct=gauge&&gauge.characteristicValues;
+  const w=gauge&&gauge.series&&!Array.isArray(gauge.series)&&gauge.series.W;
+  const wa=gauge&&Array.isArray(gauge.series)&&gauge.series.find(x=>x&&typeof x==="object"&&String(x.shortname||x.name||x.type).toUpperCase()==="W");
+  const source=direct||(w&&w.characteristicValues)||(wa&&wa.characteristicValues)||[];
+  if(!Array.isArray(source)) return {MNW:num(source.MNW),MW:num(source.MW),MHW:num(source.MHW)};
+  const out={};
+  source.forEach(x=>{ const k=String(x.shortname||x.name||"").toUpperCase(); if(["MNW","MW","MHW"].includes(k)) out[k]=num(x.value); });
+  return out;
+}
+function classifyPegel(w,gauge){
+  const {MNW,MW,MHW}=characteristicValues(gauge);
+  if([MNW,MW,MHW].some(v=>v==null)) return {t:"ohne Einordnung",c:"pg-blue",refs:null};
   const loMid=(MNW+MW)/2, hiMid=(MW+MHW)/2;
-  if(w<MNW)   return {t:"sehr niedrig", c:"pg-red"};
-  if(w<loMid) return {t:"niedrig",      c:"pg-amber"};
-  if(w<hiMid) return {t:"normal",       c:"pg-green"};
-  if(w<MHW)   return {t:"hoch",         c:"pg-amber"};
-  return              {t:"sehr hoch",   c:"pg-red"};
+  let out;
+  if(w<MNW)   out={t:"sehr niedrig", c:"pg-red"};
+  else if(w<loMid) out={t:"niedrig", c:"pg-amber"};
+  else if(w<hiMid) out={t:"normal", c:"pg-green"};
+  else if(w<MHW) out={t:"hoch", c:"pg-amber"};
+  else out={t:"sehr hoch", c:"pg-red"};
+  out.refs={MNW,MW,MHW}; return out;
 }
 
-async function loadPegel(){
+async function loadPegel(token){
+  const gauge=currentGauge(), po=PEGELONLINE_BASE+encodeURIComponent(gauge.id);
+  state.pegelTrend=null; snap.pegel=null; snap.q=null;
   try{
-    const w = await getJSON(PO+"/W/measurements.json?start=P2D");
+    const w = await getJSON(po+"/W/measurements.json?start=P2D");
+    if(token!==SELECTION_VERSION) return;
     const last = w[w.length-1];
     $("pegelVal").innerHTML = fmt(last.value)+' <small>cm</small>';
-    const pc = classifyPegel(last.value);
-    $("pegelMeta").innerHTML = '<span class="pgbadge '+pc.c+'" title="Einordnung nach Hauptwerten Pegel Mainz: MNW 159 · MW 288 · MHW 547 cm">'+pc.t+'</span>'+trendBadge(w)+' · '+relTime(last.timestamp);
+    const pc = classifyPegel(last.value,gauge);
+    const title=pc.refs?('Einordnung nach Hauptwerten: MNW '+fmt(pc.refs.MNW)+' · MW '+fmt(pc.refs.MW)+' · MHW '+fmt(pc.refs.MHW)+' cm'):"Für diese Station liegen keine vollständigen Hauptwerte vor";
+    $("pegelMeta").innerHTML = '<span class="pgbadge '+pc.c+'" title="'+title+'">'+pc.t+'</span>'+trendBadge(w)+' · '+relTime(last.timestamp);
     sparkline($("pegelSpark"), w.slice(-96), "#38bdf8");
     const pt=$("tilePegel"); if(pt) pt.style.borderTopColor = stripeColor(pc.c);
     state.pegelTrend = w;
-    snap.pegel = { pegelstand_cm: last.value, stufe: pc.t };
-  }catch(e){ $("pegelVal").innerHTML='<span class="err">n/v</span>'; $("pegelMeta").textContent="Pegel nicht erreichbar"; }
+    snap.pegel = { pegelstand_cm: last.value, stufe: pc.t, station:gauge.name, station_id:gauge.id };
+  }catch(e){
+    if(token!==SELECTION_VERSION) return;
+    $("pegelVal").innerHTML='<span class="err">n/v</span>'; $("pegelMeta").textContent="Pegel nicht erreichbar";
+    sparkline($("pegelSpark"),[],"#38bdf8");
+  }
+  if(!supportsSeries(gauge,"Q")){
+    if(token!==SELECTION_VERSION) return;
+    $("qVal").innerHTML='<span class="err">n/v</span>';
+    $("qMeta").textContent="Diese Pegelstation misst keinen Durchfluss";
+    sparkline($("qSpark"),[],"#2dd4bf");
+    return;
+  }
   try{
-    const q = await getJSON(PO+"/Q/measurements.json?start=P2D");
+    const q = await getJSON(po+"/Q/measurements.json?start=P2D");
+    if(token!==SELECTION_VERSION) return;
     const last = q[q.length-1];
     $("qVal").innerHTML = fmt(last.value)+' <small>m³/s</small>';
     $("qMeta").innerHTML = trendBadge(q)+' · '+relTime(last.timestamp);
     sparkline($("qSpark"), q.slice(-96), "#2dd4bf");
     snap.q = last.value;
-  }catch(e){ $("qVal").innerHTML='<span class="err">n/v</span>'; $("qMeta").textContent="Durchfluss nicht erreichbar"; }
+  }catch(e){
+    if(token!==SELECTION_VERSION) return;
+    $("qVal").innerHTML='<span class="err">n/v</span>'; $("qMeta").textContent="Durchfluss nicht erreichbar";
+    sparkline($("qSpark"),[],"#2dd4bf");
+  }
 }
 
-async function loadWeather(){
-  const url = "https://api.open-meteo.com/v1/forecast?latitude="+LAT+"&longitude="+LON+
+async function loadWeather(token){
+  const spot=Object.assign({},APP_SELECTION.spot);
+  state.pressTrend=null; state.gust=null; state.rainNow=null; state.wcode=null; snap.weather=null;
+  const url = "https://api.open-meteo.com/v1/forecast?latitude="+spot.lat+"&longitude="+spot.lon+
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m"+
     "&hourly=pressure_msl&daily=sunrise,sunset,precipitation_sum"+
     "&timezone=Europe%2FBerlin&forecast_days=1&wind_speed_unit=kmh";
   try{
     const d = await getJSON(url), c = d.current;
+    if(token!==SELECTION_VERSION) return;
     $("airVal").innerHTML = fmt(c.temperature_2m,1)+' <small>°C</small>';
     $("airMeta").textContent = "gefühlt "+fmt(c.apparent_temperature,1)+" °C";
     $("windVal").innerHTML = fmt(c.wind_speed_10m)+' <small>km/h '+windDir(c.wind_direction_10m)+'</small>';
@@ -146,9 +408,10 @@ async function loadWeather(){
       bewoelkung_pct: c.cloud_cover, luftdruck_hpa: c.pressure_msl,
       luftdruck_tendenz_3h_hpa: (pt==null? null : Math.round(pt*10)/10),
       wind_kmh: c.wind_speed_10m, windrichtung: windDir(c.wind_direction_10m),
-      windrichtung_grad: c.wind_direction_10m, boen_kmh: c.wind_gusts_10m
+      windrichtung_grad: c.wind_direction_10m, boen_kmh: c.wind_gusts_10m,
+      ort: {lat:spot.lat,lon:spot.lon,rhein_km:spot.km}
     };
-  }catch(e){ $("skyVal").innerHTML='<span class="err">Wetter n/v</span>'; }
+  }catch(e){ if(token===SELECTION_VERSION) $("skyVal").innerHTML='<span class="err">Wetter n/v</span>'; }
 }
 
 function updateAmpel(){
@@ -178,7 +441,7 @@ function updateAmpel(){
 }
 
 function copyCoords(){
-  const t = STATION.lat+", "+STATION.lon;
+  const s=APP_SELECTION.spot, t = s.lat+", "+s.lon;
   navigator.clipboard?.writeText(t).then(()=>{
     const b=$("copyBtn"), o=b.textContent; b.textContent="✓ kopiert"; setTimeout(()=>b.textContent=o,1500);
   }).catch(()=>{});
@@ -196,37 +459,52 @@ function classifyWQ(label, num){
   let i=0; while(i<bands.length && num>=bands[i]) i++;
   return { t:labels[i], c:colors[i] };
 }
-function renderQuality(){
+function renderQuality(station){
   const box=$("quality"); if(!box) return;
   const d=window.WQ_DATA||{items:[]};
-  const items=(d.items||[]).filter(it=> it.label!=="pH-Wert" && it.label!=="Leitfähigkeit");
+  const items=d.items||[];
+  const sourceUrl=station&&safeHttpUrl(station.sourceUrl);
   if(!items.length){
     box.innerHTML='<div class="qtile"><div class="lbl">🌡️ Wasserqualität</div>'+
-      '<div class="hint">Noch keine Werte importiert. Der 3-Stunden-Job füllt sie automatisch – oder öffne die amtliche Live-Ansicht.</div>'+
-      '<a class="go" target="_blank" rel="noopener" href="https://geodaten-wasser.rlp-umwelt.de/gus/2511510500/messwerte">Live-Wert öffnen ↗</a></div>';
+      '<div class="hint">Für diese Station sind gerade keine nutzbaren Werte im Datenbestand.</div>'+
+      (sourceUrl?'<a class="go" target="_blank" rel="noopener" href="'+esc(sourceUrl)+'">Amtliche Quelle öffnen ↗</a>':"")+'</div>';
+    const st=$("qStamp");
+    if(st) st.textContent="Keine aktuellen Qualitätswerte verfügbar.";
     return;
   }
-  const CHARTABLE={"Wassertemperatur":1,"O₂-Sättigung":1,"Trübung":1};
+  const CHARTABLE={"Wassertemperatur":1,"Sauerstoff":1,"O₂-Sättigung":1,"Trübung":1,"pH-Wert":1,"Leitfähigkeit":1};
   box.innerHTML = items.map(it=>{
-    const cls=classifyWQ(it.label, deNum(it.value));
+    const value=it.numericValue!=null?it.numericValue:deNum(it.value);
+    const cls=classifyWQ(it.label, value);
     const badge = cls ? '<span class="pgbadge '+cls.c+'">'+cls.t+'</span>' : '';
     const stripe = cls ? stripeColor(cls.c) : "var(--water)";
     const clk = CHARTABLE[it.label] ? ' clickable" onclick="openChart(\'wq:'+it.label+'\')' : '';
-    return '<div class="tile'+clk+'" style="border-top-color:'+stripe+'"><div class="lbl">'+(it.icon||"•")+' '+it.label+'</div>'+
-      '<div class="val">'+it.value+' <small>'+(it.unit||"")+'</small></div>'+
-      '<div class="meta">'+badge+'Stand: '+(it.time||"–")+'</div></div>';
+    return '<div class="tile'+clk+'" style="border-top-color:'+stripe+'"><div class="lbl">'+esc(it.icon||"•")+' '+esc(it.label)+'</div>'+
+      '<div class="val">'+esc(it.value!=null?it.value:fmt(value,1))+' <small>'+esc(it.unit||"")+'</small></div>'+
+      '<div class="meta">'+badge+'Stand: '+esc(it.time||"–")+'</div></div>';
   }).join("");
   const st=$("qStamp");
-  if(st && d.updated){ st.innerHTML='Importiert am '+d.updated+' aus dem RLP-Portal · '+
-    '<a href="https://geodaten-wasser.rlp-umwelt.de/gus/2511510500/messwerte" target="_blank" rel="noopener">Amtliche Live-Ansicht ↗</a>'; }
+  if(st){
+    const meta=d.stationMeta||{}, provider=station&&station.provider||meta.provider||"amtlicher Quelle";
+    const updated=d.updated||d.generatedAt||"unbekannt";
+    const stateText=d.fetch&&d.fetch.state==="fallback"?" · letzter verfügbarer Datenstand":"";
+    st.innerHTML='Importiert am '+esc(updated)+' · '+esc(provider)+stateText+
+      (sourceUrl?' · <a href="'+esc(sourceUrl)+'" target="_blank" rel="noopener">Amtliche Quelle ↗</a>':"");
+  }
 }
 
-async function loadQuality(){
+async function loadQuality(token){
+  const station=currentQuality();
+  window.WQ_DATA={updated:"",items:[]};
   try{
-    const r = await fetch("wasserwerte.json?t="+Math.floor(Date.now()/300000), {cache:"no-store"});
-    if(r.ok){ const j = await r.json(); if(j && Array.isArray(j.items)){ window.WQ_DATA = j; } }
+    const r = await fetch(station.dataUrl+"?t="+Math.floor(Date.now()/300000), {cache:"no-store"});
+    if(r.ok){
+      const j = await r.json();
+      if(token!==SELECTION_VERSION) return;
+      if(j && Array.isArray(j.items)) window.WQ_DATA = j;
+    }
   }catch(e){ /* z.B. lokal ohne Server geöffnet – dann Startwert/Hinweis */ }
-  renderQuality();
+  if(token===SELECTION_VERSION) renderQuality(station);
 }
 
 /* ===================== Fangbuch ===================== */
@@ -234,7 +512,7 @@ const CATCH_KEY = "rheincheck_faenge_v1";
 function loadCatches(){ try{ return JSON.parse(localStorage.getItem(CATCH_KEY)) || []; }catch(e){ return []; } }
 function saveCatches(a){ try{ localStorage.setItem(CATCH_KEY, JSON.stringify(a)); }catch(e){ alert("Speichern fehlgeschlagen (Speicher voll?)."); } }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-function deNum(s){ if(s==null) return null; const n=parseFloat(String(s).replace(/\./g,'').replace(',','.')); return isNaN(n)? String(s) : n; }
+function deNum(s){ const n=num(s); return n==null ? (s==null?null:String(s)) : n; }
 
 function moonPhase(date){
   const syn=29.530588853, ref=Date.UTC(2000,0,6,18,14,0);
@@ -276,7 +554,7 @@ function saveCatch(){
   const rec={
     id: Date.now(),
     erfasst_iso: new Date().toISOString(),
-    gewaesser: $("f_gewaesser").value.trim() || "Rhein (Mainz/Wiesbaden)",
+    gewaesser: $("f_gewaesser").value.trim() || "Rhein",
     datum, uhrzeit: zeit,
     fischart: art,
     groesse_cm: $("f_groesse").value ? +$("f_groesse").value : null,
@@ -292,7 +570,11 @@ function saveCatch(){
       pegel_stufe: snap.pegel? snap.pegel.stufe : null,
       durchfluss_m3s: snap.q
     }, waterQualitySnap()),
-    station: { pegel:"MAINZ", guete:"Mainz-Wiesbaden" }
+    angelbereich: Object.assign({},APP_SELECTION.spot),
+    station: {
+      pegel:currentGauge().name, pegel_id:currentGauge().id,
+      guete:currentQuality().name, guete_id:currentQuality().id
+    }
   };
   const arr=loadCatches(); arr.push(rec); saveCatches(arr);
   $("f_art").value=""; $("f_groesse").value=""; $("f_gewicht").value=""; $("f_koeder").value=""; $("f_notiz").value="";
@@ -304,7 +586,7 @@ function saveCatch(){
 
 function deleteCatch(id){
   if(!confirm("Diesen Fang löschen?")) return;
-  saveCatches(loadCatches().filter(c=>c.id!==id));
+  saveCatches(loadCatches().filter(c=>Number(c.id)!==Number(id)));
   refreshFangbuch();
 }
 
@@ -323,12 +605,12 @@ function renderCatches(){
     if(w.wetterlage) cond.push(w.wetterlage);
     if(c.mondphase&&c.mondphase.name) cond.push(c.mondphase.name);
     return '<div class="fbitem"><div class="h"><span class="fish">'+esc(c.fischart)+
-      (c.groesse_cm?' · '+c.groesse_cm+' cm':'')+(c.gewicht_g?' · '+c.gewicht_g+' g':'')+'</span>'+
-      '<button class="del" onclick="deleteCatch('+c.id+')">löschen ✕</button></div>'+
+      (c.groesse_cm?' · '+esc(c.groesse_cm)+' cm':'')+(c.gewicht_g?' · '+esc(c.gewicht_g)+' g':'')+'</span>'+
+      '<button class="del" onclick="deleteCatch('+Number(c.id)+')">löschen ✕</button></div>'+
       '<div class="when">'+esc(c.datum||"")+' '+esc(c.uhrzeit||"")+' · '+esc(c.gewaesser||"")+
       (c.koeder?' · '+esc(c.koeder):'')+(c.methode?' · '+esc(c.methode):'')+(c.gps?' · 📍':'')+'</div>'+
-      (cond.length?'<div class="cond">'+esc(cond.join(" · "))+'</div>':'')+
-      (c.notiz?'<div class="cond">„'+esc(c.notiz)+'"</div>':'')+'</div>';
+      (cond.length?'<div class="fbcond">'+esc(cond.join(" · "))+'</div>':'')+
+      (c.notiz?'<div class="fbcond">„'+esc(c.notiz)+'"</div>':'')+'</div>';
   }).join("");
 }
 
@@ -367,8 +649,22 @@ function importJSON(ev){
   rd.onload=()=>{
     try{
       const data=JSON.parse(rd.result); if(!Array.isArray(data)) throw 0;
-      const cur=loadCatches(), ids=new Set(cur.map(x=>x.id)); let added=0;
-      data.forEach(r=>{ if(r&&r.id!=null&&!ids.has(r.id)){ cur.push(r); ids.add(r.id); added++; } });
+      const cur=loadCatches(), ids=new Set(cur.map(x=>num(x.id)??x.id)); let added=0;
+      data.forEach((r,i)=>{
+        if(!r||typeof r!=="object") return;
+        let id=num(r.id); if(id==null) id=Date.now()+i;
+        if(ids.has(id)) return;
+        const clean=Object.assign({},r,{
+          id,
+          fischart:String(r.fischart||"").slice(0,120),
+          groesse_cm:num(r.groesse_cm), gewicht_g:num(r.gewicht_g)
+        });
+        if(clean.gps){
+          const lat=num(clean.gps.lat),lon=num(clean.gps.lon);
+          clean.gps=lat!=null&&lon!=null?Object.assign({},clean.gps,{lat,lon}):null;
+        }
+        cur.push(clean); ids.add(id); added++;
+      });
       saveCatches(cur); refreshFangbuch(); alert(added+" Fänge importiert.");
     }catch(e){ alert("Import fehlgeschlagen: keine gültige Fangbuch-JSON."); }
     ev.target.value="";
@@ -376,30 +672,180 @@ function importJSON(ev){
   rd.readAsText(f);
 }
 
-/* ---- Leaflet-Karte ---- */
-let MAP=null, CATCH_LAYER=null, SELECT_MARKER=null;
+/* ---- Stationswahl, Favoriten & Leaflet-Karte ---- */
+let MAP=null, CATCH_LAYER=null, STATION_LAYER=null, ROUTE_LAYER=null;
+let SPOT_MARKER=null, CATCH_SELECT_MARKER=null;
+
+function getFavorites(){
+  try{
+    const a=JSON.parse(localStorage.getItem(FAVORITES_KEY));
+    return Array.isArray(a)?a.filter(f=>f&&num(f.lat)!=null&&num(f.lon)!=null).map(f=>Object.assign({},f,{lat:num(f.lat),lon:num(f.lon)})):[];
+  }catch(_){ return []; }
+}
+function saveFavorites(a){
+  try{ localStorage.setItem(FAVORITES_KEY,JSON.stringify(a)); }catch(_){}
+}
+function matchingFavorite(){
+  const s=APP_SELECTION.spot;
+  const gaugeId=APP_SELECTION.manualGauge?APP_SELECTION.gaugeId:"";
+  const qualityId=APP_SELECTION.manualQuality?APP_SELECTION.qualityId:"";
+  return getFavorites().find(f=>haversineKm(s,{lat:f.lat,lon:f.lon})<0.08&&
+    String(f.gaugeId||"")===String(gaugeId)&&String(f.qualityId||"")===String(qualityId));
+}
+function toggleFavorite(){
+  const list=getFavorites(), found=matchingFavorite();
+  if(found) saveFavorites(list.filter(f=>f.id!==found.id));
+  else{
+    const s=APP_SELECTION.spot;
+    list.push({
+      id:String(Date.now()),label:s.label+(s.km!=null?" · km "+fmt(s.km,1):""),lat:s.lat,lon:s.lon,
+      gaugeId:APP_SELECTION.manualGauge?APP_SELECTION.gaugeId:"",
+      qualityId:APP_SELECTION.manualQuality?APP_SELECTION.qualityId:""
+    });
+    saveFavorites(list);
+  }
+  renderFavorites();
+}
+function selectFavorite(id){
+  const f=getFavorites().find(x=>x.id===id); if(!f) return;
+  setFishingSpot(f.lat,f.lon,{
+    label:f.label.replace(/\s·\skm\s.+$/,""),pan:true,source:"favorite",
+    gaugeId:byId(CATALOG.gauges,f.gaugeId)?f.gaugeId:"",
+    qualityId:byId(CATALOG.qualityStations,f.qualityId)?f.qualityId:""
+  });
+}
+function renderFavorites(){
+  const select=$("favoriteSelect"), list=getFavorites(), found=matchingFavorite();
+  if(select){
+    select.innerHTML='<option value="">'+(list.length?"Favorit wählen …":"Noch keine Favoriten")+'</option>'+
+      list.map(f=>'<option value="'+esc(f.id)+'">'+esc(f.label)+'</option>').join("");
+    if(found) select.value=found.id;
+  }
+  const b=$("favoriteBtn");
+  if(b) b.textContent=found?"★ Favorit entfernen":"☆ Als Favorit speichern";
+}
+function fillStationControls(){
+  const area=$("areaStationSelect"),gs=$("gaugeSelect"),qs=$("qualitySelect");
+  const gaugeOptions=CATALOG.gauges.map(g=>{
+    const series=seriesNames(g).join(" + ")||"W";
+    return '<option value="'+esc(g.id)+'">'+(g.riverKm!=null?"km "+fmt(g.riverKm,1)+" · ":"")+esc(stationLabel(g.name))+" · "+esc(series)+'</option>';
+  }).join("");
+  if(area) area.innerHTML='<option value="">Karte oder Station wählen …</option>'+gaugeOptions;
+  if(gs){
+    gs.innerHTML='<option value="">Automatisch · nächste Pegelstation</option>'+gaugeOptions;
+  }
+  if(qs){
+    qs.innerHTML='<option value="">Automatisch · nächste Gütestation</option>'+CATALOG.qualityStations.sort((a,b)=>(a.riverKm??9999)-(b.riverKm??9999)).map(q=>
+      '<option value="'+esc(q.id)+'">'+(q.riverKm!=null?"km "+fmt(q.riverKm,1)+" · ":"")+esc(stationLabel(q.name))+" · "+esc(q.provider)+
+      (q.fetchState==="unavailable"?" · derzeit ohne Werte":"")+'</option>'
+    ).join("");
+  }
+}
+function stationRelation(station,spotKm){
+  if(!station||station.riverKm==null||spotKm==null) return "";
+  const d=Math.abs(station.riverKm-spotKm);
+  if(d<0.15) return "am Angelbereich";
+  return fmt(d,1)+" Rhein-km "+(station.riverKm<spotKm?"oberhalb":"unterhalb");
+}
+function updateSelectionUI(pan){
+  const s=APP_SELECTION.spot,g=currentGauge(),q=currentQuality();
+  if($("spotTitle")) $("spotTitle").textContent=s.label||"Angelbereich am Rhein";
+  const parts=[];
+  if(s.km!=null) parts.push("Rhein-km "+fmt(s.km,1));
+  parts.push("Pegel "+stationLabel(g.name)+(stationRelation(g,s.km)?" ("+stationRelation(g,s.km)+")":""));
+  parts.push("Güte "+stationLabel(q.name)+(stationRelation(q,s.km)?" ("+stationRelation(q,s.km)+")":""));
+  if($("spotDetail")) $("spotDetail").textContent=parts.join(" · ");
+  if($("headerSub")) $("headerSub").textContent=(s.km!=null?"Rhein-km "+fmt(s.km,1)+" · ":"")+"Live-Bedingungen für deinen Angelbereich";
+  document.title="Rhein-Check · "+(s.label||stationLabel(g.name));
+  if($("riverHeading")) $("riverHeading").textContent="Fluss · Pegel "+stationLabel(g.name)+" (PEGELONLINE)";
+  if($("weatherHeading")) $("weatherHeading").textContent="Wetter am Angelbereich (Open-Meteo / DWD)";
+  if($("qualityHeading")) $("qualityHeading").textContent="Wasserqualität · Messstation "+stationLabel(q.name);
+  if($("areaStationSelect")) $("areaStationSelect").value=APP_SELECTION.spotSource==="station"&&APP_SELECTION.spotStationId?APP_SELECTION.spotStationId:"";
+  if($("gaugeSelect")) $("gaugeSelect").value=APP_SELECTION.manualGauge?g.id:"";
+  if($("qualitySelect")) $("qualitySelect").value=APP_SELECTION.manualQuality?q.id:"";
+  const warning=s.distanceToRhineKm!=null&&s.distanceToRhineKm>15;
+  if($("selectionNote")){
+    $("selectionNote").classList.toggle("warn",warning);
+    $("selectionNote").textContent=warning
+      ?"Der gewählte Punkt liegt etwa "+fmt(s.distanceToRhineKm,0)+" km von der erkannten Rheinlinie entfernt. Bitte prüfe den Kartenpunkt."
+      :CATALOG.gauges.length+" Pegel und "+CATALOG.qualityStations.length+" Gütestationen verfügbar · Zuordnung anhand des Rhein-km (Näherung)."+
+        (APP_SELECTION.manualGauge||APP_SELECTION.manualQuality?" Manuelle Datenquelle aktiv.":"");
+  }
+  if($("mapCoords")) $("mapCoords").textContent="📍 "+s.lat.toFixed(4)+"° N, "+s.lon.toFixed(4)+"° O";
+  if($("spotOsmLink")) $("spotOsmLink").href="https://www.openstreetmap.org/?mlat="+s.lat+"&mlon="+s.lon+"#map=14/"+s.lat+"/"+s.lon;
+  if($("spotGoogleLink")) $("spotGoogleLink").href="https://www.google.com/maps/search/?api=1&query="+s.lat+","+s.lon;
+  const water=$("f_gewaesser");
+  if(water && (!water.dataset.userEdited||water.dataset.userEdited==="0")){
+    water.value="Rhein bei "+(s.label||stationLabel(g.name)).replace(/^Nähe\s|^Bei\s/,"");
+  }
+  renderSelectionMarker(pan);
+  renderStationMarkers();
+  renderFavorites();
+}
 function initMap(){
   if(MAP || !window.L || !document.getElementById("map")) return;
-  MAP = L.map("map",{scrollWheelZoom:false}).setView([STATION.lat, STATION.lon], 13);
+  const s=APP_SELECTION.spot;
+  MAP = L.map("map",{scrollWheelZoom:false}).setView([s.lat,s.lon], 12);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(MAP);
-  L.circleMarker([STATION.lat,STATION.lon],{radius:7,color:"#38bdf8",weight:2,fillColor:"#38bdf8",fillOpacity:.9})
-    .addTo(MAP).bindPopup("Messstation Mainz-Wiesbaden");
+  ROUTE_LAYER=L.layerGroup().addTo(MAP);
+  STATION_LAYER=L.layerGroup().addTo(MAP);
   CATCH_LAYER=L.layerGroup().addTo(MAP);
   MAP.on("click", e=>{
-    setSelectedLocation(e.latlng.lat, e.latlng.lng, null, false);
-    MARKING=false;
-    const hb=$("markHint");
-    if(hb){ hb.innerHTML='✓ Fangort markiert. <a href="#" onclick="scrollToSave();return false;">↑ zum Speichern</a>'; hb.style.display="block"; }
+    if(MARKING){
+      setSelectedLocation(e.latlng.lat,e.latlng.lng,null,false);
+      MARKING=false;
+      const hb=$("markHint");
+      if(hb){ hb.innerHTML='✓ Fangort markiert. <a href="#" onclick="scrollToSave();return false;">↑ zum Speichern</a>'; hb.style.display="block"; }
+    }else{
+      setFishingSpot(e.latlng.lat,e.latlng.lng,{pan:false});
+    }
   });
+  renderSelectionMarker(false);
+  renderStationMarkers();
   renderMarkers();
+}
+function renderSelectionMarker(pan){
+  if(!MAP||!window.L) return;
+  const s=APP_SELECTION.spot;
+  if(!SPOT_MARKER){
+    SPOT_MARKER=L.circleMarker([s.lat,s.lon],{radius:9,color:"#fbbf24",weight:3,fillColor:"#fbbf24",fillOpacity:.6,bubblingMouseEvents:false})
+      .addTo(MAP).bindTooltip("Dein Angelbereich");
+  }else SPOT_MARKER.setLatLng([s.lat,s.lon]);
+  if(pan){ try{ MAP.setView([s.lat,s.lon],Math.max(MAP.getZoom()||12,13)); }catch(_){} }
+}
+function renderStationMarkers(){
+  if(!MAP||!STATION_LAYER||!ROUTE_LAYER||!window.L) return;
+  STATION_LAYER.clearLayers(); ROUTE_LAYER.clearLayers();
+  const route=CATALOG.gauges.filter(g=>g.riverKm!=null).sort((a,b)=>a.riverKm-b.riverKm);
+  if(route.length>1){
+    L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#38bdf8",weight:3,opacity:.38,interactive:false}).addTo(ROUTE_LAYER);
+  }
+  CATALOG.gauges.forEach(g=>{
+    const chosen=g.id===APP_SELECTION.gaugeId;
+    const marker=L.circleMarker([g.latitude,g.longitude],{
+      radius:chosen?9:7,color:"#38bdf8",weight:chosen?3:1.5,fillColor:"#38bdf8",fillOpacity:chosen?.95:.65,bubblingMouseEvents:false
+    }).addTo(STATION_LAYER);
+    marker.bindTooltip(esc("Pegel "+stationLabel(g.name)+(g.riverKm!=null?" · km "+fmt(g.riverKm,1):"")));
+    marker.on("click",()=>selectAreaStation(g.id));
+  });
+  CATALOG.qualityStations.forEach(q=>{
+    const chosen=q.id===APP_SELECTION.qualityId;
+    const available=q.fetchState!=="unavailable",color=available?"#2dd4bf":"#8ea2be";
+    const marker=L.circleMarker([q.latitude,q.longitude],{
+      radius:chosen?9:7,color,weight:chosen?3:1.5,fillColor:color,fillOpacity:chosen?.95:(available?.7:.35),bubblingMouseEvents:false
+    }).addTo(STATION_LAYER);
+    marker.bindTooltip(esc("Güte "+stationLabel(q.name)+(q.riverKm!=null?" · km "+fmt(q.riverKm,1):"")+
+      (available?"":" · derzeit ohne Werte")));
+    marker.on("click",()=>useQualityAsSpot(q.id));
+  });
 }
 function setSelectedLocation(lat, lon, acc, pan){
   CURRENT_GPS={ lat:+(+lat).toFixed(6), lon:+(+lon).toFixed(6), genauigkeit_m: (acc==null? null : Math.round(acc)) };
   if(MAP && window.L){
-    if(!SELECT_MARKER){
-      SELECT_MARKER=L.circleMarker([lat,lon],{radius:8,color:"#fbbf24",weight:3,fillColor:"#fbbf24",fillOpacity:.55}).addTo(MAP);
-      SELECT_MARKER.bindPopup("Gewählter Fangort");
-    } else SELECT_MARKER.setLatLng([lat,lon]);
+    if(!CATCH_SELECT_MARKER){
+      CATCH_SELECT_MARKER=L.circleMarker([lat,lon],{radius:8,color:"#fb923c",weight:3,fillColor:"#fb923c",fillOpacity:.65}).addTo(MAP);
+      CATCH_SELECT_MARKER.bindPopup("Gewählter Fangort");
+    } else CATCH_SELECT_MARKER.setLatLng([lat,lon]);
     if(pan){ try{ MAP.setView([lat,lon], Math.max(MAP.getZoom()||13, 15)); }catch(e){} }
   }
   const extra = CURRENT_GPS.genauigkeit_m!=null ? " (Handy, ±"+CURRENT_GPS.genauigkeit_m+" m)" : " (auf Karte gewählt)";
@@ -409,7 +855,7 @@ function setSelectedLocation(lat, lon, acc, pan){
 }
 function clearSelectedLocation(){
   CURRENT_GPS=null; MARKING=false;
-  if(SELECT_MARKER && MAP){ MAP.removeLayer(SELECT_MARKER); SELECT_MARKER=null; }
+  if(CATCH_SELECT_MARKER && MAP){ MAP.removeLayer(CATCH_SELECT_MARKER); CATCH_SELECT_MARKER=null; }
   const gi=$("gpsInfo"); if(gi) gi.textContent="Kein Standort gewählt – nutze die Handy-Ortung oder „Auf Karte markieren\".";
   const b=$("gpsBtn"); if(b) b.textContent="📍 Handy-Standort";
   const hb=$("markHint"); if(hb) hb.style.display="none";
@@ -417,20 +863,24 @@ function clearSelectedLocation(){
 function renderMarkers(){
   if(!CATCH_LAYER) return;
   CATCH_LAYER.clearLayers();
-  const cs=loadCatches().filter(c=>c.gps&&c.gps.lat!=null);
+  const cs=loadCatches().filter(c=>c&&c.gps&&num(c.gps.lat)!=null&&num(c.gps.lon)!=null);
   cs.forEach(c=>{
     const wa=c.wasser||{};
-    const html='<b>'+esc(c.fischart||"Fang")+'</b>'+(c.groesse_cm?' · '+c.groesse_cm+' cm':'')+
+    const html='<b>'+esc(c.fischart||"Fang")+'</b>'+(c.groesse_cm?' · '+esc(c.groesse_cm)+' cm':'')+
       '<br>'+esc(c.datum||"")+' '+esc(c.uhrzeit||"")+(c.koeder?'<br>Köder: '+esc(c.koeder):'')+
-      (wa.pegelstand_cm!=null?'<br>Pegel: '+wa.pegelstand_cm+' cm':'')+
-      (wa.wassertemperatur_c!=null?'<br>Wasser: '+wa.wassertemperatur_c+' °C':'');
-    L.circleMarker([c.gps.lat,c.gps.lon],{radius:6,color:"#4ade80",weight:2,fillColor:"#4ade80",fillOpacity:.85})
+      (wa.pegelstand_cm!=null?'<br>Pegel: '+esc(wa.pegelstand_cm)+' cm':'')+
+      (wa.wassertemperatur_c!=null?'<br>Wasser: '+esc(wa.wassertemperatur_c)+' °C':'');
+    L.circleMarker([num(c.gps.lat),num(c.gps.lon)],{radius:6,color:"#4ade80",weight:2,fillColor:"#4ade80",fillOpacity:.85})
       .bindPopup(html).addTo(CATCH_LAYER);
   });
-  if(cs.length){ try{ MAP.fitBounds(L.featureGroup(CATCH_LAYER.getLayers()).getBounds().pad(0.3)); }catch(e){} }
 }
 
 let MARKING=false;
+function cancelMarking(){
+  if(!MARKING) return;
+  MARKING=false;
+  const hb=$("markHint"); if(hb) hb.style.display="none";
+}
 function markOnMap(){
   MARKING=true;
   if(!MAP) initMap();
@@ -443,9 +893,9 @@ function renderTable(){
   const arr=loadCatches().sort((a,b)=>((b.datum||"")+(b.uhrzeit||"")).localeCompare((a.datum||"")+(a.uhrzeit||"")));
   if(!arr.length){ box.innerHTML='<div class="fbnote" style="padding:8px 4px">Noch keine Fänge.</div>'; return; }
   const rows=arr.map(c=>{
-    const ort = c.gps ? (c.gps.lat+', '+c.gps.lon) : esc(c.gewaesser||"");
+    const ort = c.gps ? esc(c.gps.lat+', '+c.gps.lon) : esc(c.gewaesser||"");
     return '<tr><td>'+esc(c.datum||"")+'</td><td>'+esc(c.uhrzeit||"")+'</td><td>'+esc(c.fischart||"")+'</td>'+
-      '<td>'+(c.groesse_cm!=null?c.groesse_cm:"")+'</td><td>'+(c.gewicht_g!=null?c.gewicht_g:"")+'</td>'+
+      '<td>'+esc(c.groesse_cm!=null?c.groesse_cm:"")+'</td><td>'+esc(c.gewicht_g!=null?c.gewicht_g:"")+'</td>'+
       '<td>'+esc(c.koeder||"")+'</td><td>'+ort+'</td></tr>';
   }).join("");
   box.innerHTML='<div class="fbwrap"><table class="fbtable"><thead><tr>'+
@@ -473,6 +923,10 @@ function initFangbuch(){
   const now=new Date(), pad=n=>String(n).padStart(2,'0');
   if($("f_datum")) $("f_datum").value = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
   if($("f_zeit")) $("f_zeit").value = pad(now.getHours())+':'+pad(now.getMinutes());
+  if($("f_gewaesser")){
+    $("f_gewaesser").dataset.userEdited="0";
+    $("f_gewaesser").addEventListener("input",()=>{$("f_gewaesser").dataset.userEdited="1";},{once:true});
+  }
   refreshFangbuch();
   initMap();
 }
@@ -489,8 +943,8 @@ const CHART_DEFS={
   press:      {title:"Luftdruck",      unit:"hPa",  color:"#fbbf24", src:"wx:pressure_msl"},
   cloud:      {title:"Bewölkung",      unit:"%",    color:"#8ea2be", src:"wx:cloud_cover"}
 };
-const WQ_UNIT={"Wassertemperatur":"°C","O₂-Sättigung":"%","Trübung":"TE"};
-const WQ_COLOR={"Wassertemperatur":"#fbbf24","O₂-Sättigung":"#4ade80","Trübung":"#8ea2be"};
+const WQ_UNIT={"Wassertemperatur":"°C","Sauerstoff":"mg/l","O₂-Sättigung":"%","Trübung":"FNU","pH-Wert":"","Leitfähigkeit":"µS/cm"};
+const WQ_COLOR={"Wassertemperatur":"#fbbf24","Sauerstoff":"#4ade80","O₂-Sättigung":"#4ade80","Trübung":"#8ea2be","pH-Wert":"#a78bfa","Leitfähigkeit":"#2dd4bf"};
 function defFor(key){
   if(CHART_DEFS[key]) return CHART_DEFS[key];
   if(key.indexOf("wq:")===0){ const l=key.slice(3); return {title:l, unit:WQ_UNIT[l]||"", color:WQ_COLOR[l]||"#38bdf8", src:key}; }
@@ -502,20 +956,23 @@ function toHourly(pts){
   return [...m.values()].sort((a,b)=>a.t-b.t);
 }
 async function histPegel(param){
-  const key=param==="W"?"pegel":"durchfluss";
+  const gauge=currentGauge();
+  if(param==="Q"&&!supportsSeries(gauge,"Q")) return [];
+  const key="gauge:"+gauge.id+":"+param;
   if(HIST[key]) return HIST[key];
-  const a=await getJSON(PO+"/"+param+"/measurements.json?start=P8D");
+  const a=await getJSON(PEGELONLINE_BASE+encodeURIComponent(gauge.id)+"/"+param+"/measurements.json?start=P8D");
   HIST[key]=a.map(p=>({t:new Date(p.timestamp), v:p.value}));
   return HIST[key];
 }
 async function histWx(){
-  if(HIST.wx) return HIST.wx;
-  const url="https://api.open-meteo.com/v1/forecast?latitude="+LAT+"&longitude="+LON+
+  const s=APP_SELECTION.spot, key="wx:"+s.lat.toFixed(4)+":"+s.lon.toFixed(4);
+  if(HIST[key]) return HIST[key];
+  const url="https://api.open-meteo.com/v1/forecast?latitude="+s.lat+"&longitude="+s.lon+
     "&hourly=temperature_2m,wind_speed_10m,pressure_msl,precipitation,cloud_cover"+
     "&past_days=7&forecast_days=1&timezone=Europe%2FBerlin&wind_speed_unit=kmh";
   const d=await getJSON(url);
-  HIST.wx={times:d.hourly.time.map(t=>new Date(t)), h:d.hourly};
-  return HIST.wx;
+  HIST[key]={times:d.hourly.time.map(t=>new Date(t)), h:d.hourly};
+  return HIST[key];
 }
 async function getSeries(def, range){
   const cutoff=Date.now()-(range==="24h"?24*3600e3:7*24*3600e3);
@@ -673,12 +1130,42 @@ function toggleFangbuch(){
 }
 
 async function loadAll(){
+  const token=++SELECTION_VERSION;
   $("updated").textContent = "aktualisiere …";
-  await Promise.allSettled([loadPegel(), loadWeather(), loadQuality()]);
+  await Promise.allSettled([loadPegel(token), loadWeather(token), loadQuality(token)]);
+  if(token!==SELECTION_VERSION) return;
   updateAmpel();
   if($("biteBox") && $("biteBox").style.display==="block") renderBite();
   $("updated").textContent = "Stand: " + new Date().toLocaleString("de-DE",{dateStyle:"short",timeStyle:"short"}) + " Uhr";
 }
-loadAll();
-setInterval(loadAll, 10*60*1000);
-initFangbuch();
+async function loadStationCatalog(){
+  let raw=FALLBACK_CATALOG;
+  try{ raw=await getJSON("data/stations.json?t="+Math.floor(Date.now()/300000)); }catch(_){}
+  CATALOG=normalizeCatalog(raw);
+  CATALOG.qualityStations.forEach(q=>{
+    if(q.riverKm==null){
+      const p=projectToRhine(q.latitude,q.longitude);
+      if(p&&p.km!=null) q.riverKm=+p.km.toFixed(2);
+    }
+  });
+  const old=APP_SELECTION, fixed={label:old.spot.label,source:old.spotSource,spotStationId:old.spotStationId};
+  if(old.manualGauge&&byId(CATALOG.gauges,old.gaugeId)) fixed.gaugeId=old.gaugeId;
+  if(old.manualQuality&&byId(CATALOG.qualityStations,old.qualityId)) fixed.qualityId=old.qualityId;
+  APP_SELECTION=resolveSelection(old.spot.lat,old.spot.lon,fixed);
+  APP_SELECTION.manualGauge=!!fixed.gaugeId;
+  APP_SELECTION.manualQuality=!!fixed.qualityId;
+  persistSelection();
+}
+async function bootstrap(){
+  loadStoredSelection();
+  CATALOG=normalizeCatalog(FALLBACK_CATALOG);
+  initFangbuch();
+  await loadStationCatalog();
+  fillStationControls();
+  SELECTION_VERSION++;
+  updateSelectionUI(false);
+  resetLiveTiles();
+  await loadAll();
+  setInterval(loadAll,10*60*1000);
+}
+bootstrap();
