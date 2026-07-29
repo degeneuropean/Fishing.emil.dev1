@@ -214,13 +214,13 @@ function renderEditorStations(){
   if(!UI_SPOT_MAP||!UI_SPOT_LAYER)return;
   UI_SPOT_LAYER.clearLayers();UI_SPOT_ROUTE.clearLayers();
   const route=CATALOG.gauges.filter(g=>g.riverKm!=null).sort((a,b)=>a.riverKm-b.riverKm);
-  if(route.length>1)L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#38bdf8",weight:3,opacity:.3,interactive:false}).addTo(UI_SPOT_ROUTE);
+  if(route.length>1)L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#007aff",weight:3,opacity:.3,interactive:false}).addTo(UI_SPOT_ROUTE);
   CATALOG.gauges.forEach(g=>{
-    const marker=L.circleMarker([g.latitude,g.longitude],{radius:5,color:"#38bdf8",weight:1.5,fillColor:"#38bdf8",fillOpacity:.75,bubblingMouseEvents:false}).addTo(UI_SPOT_LAYER);
+    const marker=L.circleMarker([g.latitude,g.longitude],{radius:5,color:"#007aff",weight:1.5,fillColor:"#007aff",fillOpacity:.75,bubblingMouseEvents:false}).addTo(UI_SPOT_LAYER);
     marker.bindTooltip("Pegel "+stationLabel(g.name));marker.on("click",()=>setEditorCandidate(g.latitude,g.longitude,true,"Bei "+stationLabel(g.name)));
   });
   CATALOG.qualityStations.forEach(q=>{
-    const color=q.fetchState==="unavailable"?"#8ea2be":"#2dd4bf";
+    const color=q.fetchState==="unavailable"?"#8e8e93":"#32ade6";
     const marker=L.circleMarker([q.latitude,q.longitude],{radius:5,color,weight:1.5,fillColor:color,fillOpacity:.7,bubblingMouseEvents:false}).addTo(UI_SPOT_LAYER);
     marker.bindTooltip("Güte "+stationLabel(q.name));marker.on("click",()=>setEditorCandidate(q.latitude,q.longitude,true,"Bei "+stationLabel(q.name)));
   });
@@ -229,12 +229,12 @@ function setEditorCandidate(lat,lon,pan,suggestedName,preserveOverrides){
   const resolved=resolveSelection(lat,lon,{label:suggestedName||"Angelplatz",source:"map"});
   UI_SPOT_CANDIDATE=Object.assign({},resolved.spot,{gaugeId:resolved.gaugeId,qualityId:resolved.qualityId});
   if(!UI_SPOT_MARKER){
-    UI_SPOT_MARKER=L.circleMarker([lat,lon],{radius:9,color:"#fbbf24",weight:3,fillColor:"#fbbf24",fillOpacity:.68,bubblingMouseEvents:false}).addTo(UI_SPOT_LAYER);
+    UI_SPOT_MARKER=L.circleMarker([lat,lon],{radius:9,color:"#ff9500",weight:3,fillColor:"#ff9500",fillOpacity:.68,bubblingMouseEvents:false}).addTo(UI_SPOT_LAYER);
   }else UI_SPOT_MARKER.setLatLng([lat,lon]);
   if(pan)UI_SPOT_MAP.setView([lat,lon],Math.max(UI_SPOT_MAP.getZoom()||12,13));
   if(suggestedName&&!$("spotNameInput").value)$("spotNameInput").value=suggestedName;
   if(!preserveOverrides){$("spotGaugeInput").value="";$("spotQualityInput").value="";}
-  $("mapCoords").textContent="📍 "+Number(lat).toFixed(4)+"° N, "+Number(lon).toFixed(4)+"° O";
+  $("mapCoords").textContent=Number(lat).toFixed(4)+"° N, "+Number(lon).toFixed(4)+"° O";
   const warning=resolved.spot.distanceToRhineKm!=null&&resolved.spot.distanceToRhineKm>15;
   $("spotEditorNote").classList.toggle("warn",warning);
   $("spotEditorNote").textContent=warning
@@ -316,20 +316,20 @@ function renderExplorerMarkers(){
   if(!UI_EXPLORER_MAP||!UI_EXPLORER_STATIONS)return;
   UI_EXPLORER_STATIONS.clearLayers();UI_EXPLORER_ROUTE.clearLayers();UI_EXPLORER_SPOTS.clearLayers();
   const route=CATALOG.gauges.filter(g=>g.riverKm!=null).sort((a,b)=>a.riverKm-b.riverKm);
-  if(route.length>1)L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#38bdf8",weight:3,opacity:.34,interactive:false}).addTo(UI_EXPLORER_ROUTE);
+  if(route.length>1)L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#007aff",weight:3,opacity:.34,interactive:false}).addTo(UI_EXPLORER_ROUTE);
   if($("filterGauges")?.checked!==false)CATALOG.gauges.forEach(g=>{
-    const marker=L.circleMarker([g.latitude,g.longitude],{radius:7,color:"#38bdf8",weight:2,fillColor:"#38bdf8",fillOpacity:.76,bubblingMouseEvents:false}).addTo(UI_EXPLORER_STATIONS);
+    const marker=L.circleMarker([g.latitude,g.longitude],{radius:7,color:"#007aff",weight:2,fillColor:"#007aff",fillOpacity:.76,bubblingMouseEvents:false}).addTo(UI_EXPLORER_STATIONS);
     marker.bindTooltip("Pegel "+stationLabel(g.name)+(g.riverKm!=null?" · km "+fmt(g.riverKm,1):""));
     marker.on("click",()=>openStationDetail("gauge",g.id));
   });
   if($("filterQuality")?.checked!==false)CATALOG.qualityStations.forEach(q=>{
-    const available=q.fetchState!=="unavailable",color=available?"#2dd4bf":"#8ea2be";
+    const available=q.fetchState!=="unavailable",color=available?"#32ade6":"#8e8e93";
     const marker=L.circleMarker([q.latitude,q.longitude],{radius:7,color,weight:2,fillColor:color,fillOpacity:available?.76:.38,bubblingMouseEvents:false}).addTo(UI_EXPLORER_STATIONS);
     marker.bindTooltip("Güte "+stationLabel(q.name)+(q.riverKm!=null?" · km "+fmt(q.riverKm,1):"")+(available?"":" · derzeit ohne Werte"));
     marker.on("click",()=>openStationDetail("quality",q.id));
   });
   if($("filterSpots")?.checked!==false)SPOTS.forEach(s=>{
-    const marker=L.circleMarker([s.lat,s.lon],{radius:s.id===CURRENT_SPOT_ID?9:7,color:"#fbbf24",weight:s.id===CURRENT_SPOT_ID?3:2,fillColor:"#fbbf24",fillOpacity:.7,bubblingMouseEvents:false}).addTo(UI_EXPLORER_SPOTS);
+    const marker=L.circleMarker([s.lat,s.lon],{radius:s.id===CURRENT_SPOT_ID?9:7,color:"#ff9500",weight:s.id===CURRENT_SPOT_ID?3:2,fillColor:"#ff9500",fillOpacity:.7,bubblingMouseEvents:false}).addTo(UI_EXPLORER_SPOTS);
     marker.bindTooltip(s.name+(s.id===CURRENT_SPOT_ID?" · aktiv":""));
     marker.on("click",()=>{activateSpot(s.id);navigateTo("spots");});
   });
@@ -348,7 +348,7 @@ function stationActionButtons(type,id,station){
   return '<div class="station-actions">'+
     (active?'<button class="primary" type="button" onclick="useStationForActiveSpot(\''+type+'\',\''+esc(id)+'\')">Für „'+esc(active.name)+'“ verwenden</button>':"")+
     '<button class="secondary" type="button" onclick="openSpotEditorAtStation(\''+type+'\',\''+esc(id)+'\')">Angelplatz hier hinzufügen</button>'+
-    (safeHttpUrl(station.sourceUrl)?'<a class="secondary" target="_blank" rel="noopener" href="'+esc(safeHttpUrl(station.sourceUrl))+'">Amtliche Quelle öffnen ↗</a>':"")+
+    (safeHttpUrl(station.sourceUrl)?'<a class="secondary" target="_blank" rel="noopener" href="'+esc(safeHttpUrl(station.sourceUrl))+'">Amtliche Quelle öffnen <i class="bi bi-arrow-up-right"></i></a>':"")+
     '</div>';
 }
 async function openStationDetail(type,id){
@@ -599,14 +599,14 @@ function renderLogbook(){
     '<div class="trip-meta">Gestartet '+esc(formatDateTime(active.startAt))+(active.method?" · "+esc(active.method):"")+
     (active.targetSpecies?" · Zielfisch "+esc(active.targetSpecies):"")+'</div></div><div class="trip-duration">'+esc(formatDuration(active.startAt))+'</div></div>'+
     (active.notes?'<div class="trip-notes">„'+esc(active.notes)+'“</div>':"")+
-    '<div class="trip-actions"><button class="primary" type="button" onclick="openCatchDialog()">＋ Fang hinzufügen</button>'+
+    '<div class="trip-actions"><button class="primary" type="button" onclick="openCatchDialog()"><i class="bi bi-plus-lg"></i> Fang hinzufügen</button>'+
     '<button class="secondary" type="button" onclick="openEndTripDialog()">Trip beenden</button></div>'+
     '<div class="section-title">Fänge in diesem Trip · '+active.catches.length+'</div>'+renderCatchRows(active)+'</article>':"";
   $("tripHistory").innerHTML=history.length?'<div class="section-title">Abgeschlossene Trips</div>'+history.map(trip=>
     '<article class="trip-history-item"><button class="trip-history-head" type="button" onclick="toggleTripDetails(\''+esc(trip.id)+'\')"><div><strong>'+
     esc(trip.spotSnapshot?.name||"Angeltrip")+'</strong><div class="trip-meta">'+esc(formatDateTime(trip.startAt))+
     ' · '+esc(formatDuration(trip.startAt,trip.endAt))+'</div></div><span class="trip-count">'+trip.catches.length+" Fang"+
-    (trip.catches.length===1?"":"e")+' ▾</span></button><div class="trip-history-body" id="trip-body-'+esc(trip.id)+'" hidden>'+
+    (trip.catches.length===1?"":"e")+' <i class="bi bi-chevron-down"></i></span></button><div class="trip-history-body" id="trip-body-'+esc(trip.id)+'" hidden>'+
     renderCatchRows(trip)+(trip.notes?'<div class="trip-notes">Startnotiz: „'+esc(trip.notes)+'“</div>':"")+
     (trip.endNotes?'<div class="trip-notes">Fazit: „'+esc(trip.endNotes)+'“</div>':"")+
     '<div class="trip-actions"><button class="danger-quiet" type="button" onclick="deleteTrip(\''+esc(trip.id)+'\')">Trip löschen</button></div></div></article>'
@@ -622,8 +622,8 @@ function exportTrips(){download("rheincheck-logbuch.json",JSON.stringify(UI_TRIP
 /* ===================== Angepasste Daten-UI ===================== */
 function toggleBite(){
   const box=$("biteBox"),button=$("biteBtn"),show=box.hidden;
-  if(show){renderBite();box.hidden=false;button.textContent="🎯 Einschätzung nach Fischart ausblenden";}
-  else{box.hidden=true;button.textContent="🎯 Einschätzung nach Fischart anzeigen";}
+  if(show){renderBite();box.hidden=false;button.innerHTML='<i class="bi bi-bullseye"></i> Einschätzung nach Fischart ausblenden';}
+  else{box.hidden=true;button.innerHTML='<i class="bi bi-bullseye"></i> Einschätzung nach Fischart anzeigen';}
 }
 async function loadAll(){
   if(!getActiveSpot()){

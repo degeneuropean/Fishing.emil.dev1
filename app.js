@@ -200,7 +200,7 @@ function resetLiveTiles(){
    ["rainVal","–"],["rainMeta","lädt …"],["pressVal","–"],["pressMeta","lädt …"],
    ["skyVal","–"],["skyMeta","lädt …"],["sunVal","–"],["sunMeta","lädt …"]]
     .forEach(([id,text])=>{ if($(id)) $(id).textContent=text; });
-  if($("quality")) $("quality").innerHTML='<div class="qtile"><div class="lbl">🌡️ Wasserqualität</div><div class="hint">Werte der gewählten Station werden geladen …</div></div>';
+  if($("quality")) $("quality").innerHTML='<div class="qtile"><div class="lbl"><i class="bi bi-droplet"></i> Wasserqualität</div><div class="hint">Werte der gewählten Station werden geladen …</div></div>';
 }
 function setFishingSpot(lat,lon,options){
   APP_SELECTION=resolveSelection(lat,lon,options);
@@ -292,15 +292,15 @@ function relTime(iso){
 function hhmm(iso){ return new Date(iso).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"}); }
 
 const WMO = {
-  0:["Klar","☀️"],1:["Überwiegend klar","🌤️"],2:["Teils bewölkt","⛅"],3:["Bedeckt","☁️"],
-  45:["Nebel","🌫️"],48:["Reifnebel","🌫️"],
-  51:["Leichter Niesel","🌦️"],53:["Niesel","🌦️"],55:["Starker Niesel","🌧️"],
-  61:["Leichter Regen","🌦️"],63:["Regen","🌧️"],65:["Starker Regen","🌧️"],
-  66:["Gefr. Regen","🌧️"],67:["Gefr. Regen","🌧️"],
-  71:["Leichter Schnee","🌨️"],73:["Schnee","🌨️"],75:["Starker Schnee","❄️"],77:["Schneegriesel","🌨️"],
-  80:["Schauer","🌦️"],81:["Schauer","🌧️"],82:["Heftige Schauer","⛈️"],
-  85:["Schneeschauer","🌨️"],86:["Schneeschauer","🌨️"],
-  95:["Gewitter","⛈️"],96:["Gewitter + Hagel","⛈️"],99:["Gewitter + Hagel","⛈️"]
+  0:["Klar","bi-sun"],1:["Überwiegend klar","bi-sun"],2:["Teils bewölkt","bi-cloud-sun"],3:["Bedeckt","bi-cloud"],
+  45:["Nebel","bi-cloud-fog"],48:["Reifnebel","bi-cloud-fog"],
+  51:["Leichter Niesel","bi-cloud-drizzle"],53:["Niesel","bi-cloud-drizzle"],55:["Starker Niesel","bi-cloud-rain"],
+  61:["Leichter Regen","bi-cloud-drizzle"],63:["Regen","bi-cloud-rain"],65:["Starker Regen","bi-cloud-rain-heavy"],
+  66:["Gefrierender Regen","bi-cloud-sleet"],67:["Gefrierender Regen","bi-cloud-sleet"],
+  71:["Leichter Schnee","bi-cloud-snow"],73:["Schnee","bi-cloud-snow"],75:["Starker Schnee","bi-snow"],77:["Schneegriesel","bi-cloud-snow"],
+  80:["Schauer","bi-cloud-drizzle"],81:["Schauer","bi-cloud-rain"],82:["Heftige Schauer","bi-cloud-rain-heavy"],
+  85:["Schneeschauer","bi-cloud-snow"],86:["Schneeschauer","bi-cloud-snow"],
+  95:["Gewitter","bi-cloud-lightning-rain"],96:["Gewitter mit Hagel","bi-cloud-lightning-rain"],99:["Gewitter mit Hagel","bi-cloud-lightning-rain"]
 };
 function windDir(deg){
   const d=["N","NNO","NO","ONO","O","OSO","SO","SSO","S","SSW","SW","WSW","W","WNW","NW","NNW"];
@@ -349,20 +349,20 @@ async function loadPegel(token){
     const pc = classifyPegel(last.value,gauge);
     const title=pc.refs?('Einordnung nach Hauptwerten: MNW '+fmt(pc.refs.MNW)+' · MW '+fmt(pc.refs.MW)+' · MHW '+fmt(pc.refs.MHW)+' cm'):"Für diese Station liegen keine vollständigen Hauptwerte vor";
     $("pegelMeta").innerHTML = '<span class="pgbadge '+pc.c+'" title="'+title+'">'+pc.t+'</span>'+trendBadge(w)+' · '+relTime(last.timestamp);
-    sparkline($("pegelSpark"), w.slice(-96), "#38bdf8");
+    sparkline($("pegelSpark"), w.slice(-96), "#007aff");
     const pt=$("tilePegel"); if(pt) pt.style.borderTopColor = stripeColor(pc.c);
     state.pegelTrend = w;
     snap.pegel = { pegelstand_cm: last.value, stufe: pc.t, station:gauge.name, station_id:gauge.id };
   }catch(e){
     if(token!==SELECTION_VERSION) return;
     $("pegelVal").innerHTML='<span class="err">n/v</span>'; $("pegelMeta").textContent="Pegel nicht erreichbar";
-    sparkline($("pegelSpark"),[],"#38bdf8");
+    sparkline($("pegelSpark"),[],"#007aff");
   }
   if(!supportsSeries(gauge,"Q")){
     if(token!==SELECTION_VERSION) return;
     $("qVal").innerHTML='<span class="err">n/v</span>';
     $("qMeta").textContent="Diese Pegelstation misst keinen Durchfluss";
-    sparkline($("qSpark"),[],"#2dd4bf");
+    sparkline($("qSpark"),[],"#32ade6");
     return;
   }
   try{
@@ -371,12 +371,12 @@ async function loadPegel(token){
     const last = q[q.length-1];
     $("qVal").innerHTML = fmt(last.value)+' <small>m³/s</small>';
     $("qMeta").innerHTML = trendBadge(q)+' · '+relTime(last.timestamp);
-    sparkline($("qSpark"), q.slice(-96), "#2dd4bf");
+    sparkline($("qSpark"), q.slice(-96), "#32ade6");
     snap.q = last.value;
   }catch(e){
     if(token!==SELECTION_VERSION) return;
     $("qVal").innerHTML='<span class="err">n/v</span>'; $("qMeta").textContent="Durchfluss nicht erreichbar";
-    sparkline($("qSpark"),[],"#2dd4bf");
+    sparkline($("qSpark"),[],"#32ade6");
   }
 }
 
@@ -396,10 +396,10 @@ async function loadWeather(token){
     $("windMeta").textContent = "Böen "+fmt(c.wind_gusts_10m)+" km/h";
     $("rainVal").innerHTML = fmt(c.precipitation,1)+' <small>mm/h</small>';
     $("rainMeta").textContent = "heute "+fmt(d.daily.precipitation_sum[0],1)+" mm";
-    const wc = WMO[c.weather_code] || ["–","•"];
-    $("skyVal").textContent = wc[1]+" "+wc[0];
+    const wc = WMO[c.weather_code] || ["Unbekannt","bi-cloud"];
+    $("skyVal").innerHTML = '<i class="bi '+wc[1]+'" aria-hidden="true"></i> '+wc[0];
     $("skyMeta").textContent = "Bewölkung "+fmt(c.cloud_cover)+" % · Feuchte "+fmt(c.relative_humidity_2m)+" %";
-    $("sunVal").textContent = "☀️ "+hhmm(d.daily.sunrise[0])+" – "+hhmm(d.daily.sunset[0]);
+    $("sunVal").innerHTML = '<i class="bi bi-sun" aria-hidden="true"></i> '+hhmm(d.daily.sunrise[0])+" – "+hhmm(d.daily.sunset[0]);
     $("sunMeta").textContent = "Sonnenauf- / -untergang";
 
     let pt=null;
@@ -444,10 +444,10 @@ function updateAmpel(){
     else if(Math.abs(diff)<=4){ reasons.push("Pegel stabil"); }
   }
   let cls,txt,ico;
-  if(score>=2){ cls="lg-green"; txt="Gute Bedingungen"; ico="👍"; }
-  else if(score<=-1){ cls="lg-red"; txt="Schwierige Bedingungen"; ico="⚠️"; }
-  else { cls="lg-amber"; txt="Mittelmäßige Bedingungen"; ico="≈"; }
-  $("condDot").className="dot "+cls; $("condDot").textContent=ico;
+  if(score>=2){ cls="lg-green"; txt="Gute Bedingungen"; ico="bi-check-lg"; }
+  else if(score<=-1){ cls="lg-red"; txt="Schwierige Bedingungen"; ico="bi-exclamation-lg"; }
+  else { cls="lg-amber"; txt="Mittelmäßige Bedingungen"; ico="bi-dash-lg"; }
+  $("condDot").className="dot "+cls; $("condDot").innerHTML='<i class="bi '+ico+'" aria-hidden="true"></i>';
   $("condLvl").textContent=txt;
   $("condWhy").textContent = reasons.length ? reasons.join(" · ") : "Keine auffälligen Faktoren.";
 }
@@ -455,7 +455,7 @@ function updateAmpel(){
 function copyCoords(){
   const s=APP_SELECTION.spot, t = s.lat+", "+s.lon;
   navigator.clipboard?.writeText(t).then(()=>{
-    const b=$("copyBtn"), o=b.textContent; b.textContent="✓ kopiert"; setTimeout(()=>b.textContent=o,1500);
+    const b=$("copyBtn"), o=b.textContent; b.textContent="Kopiert"; setTimeout(()=>b.textContent=o,1500);
   }).catch(()=>{});
 }
 
@@ -471,15 +471,22 @@ function classifyWQ(label, num){
   let i=0; while(i<bands.length && num>=bands[i]) i++;
   return { t:labels[i], c:colors[i] };
 }
+function qualityIcon(label){
+  const icons={
+    "Wassertemperatur":"bi-thermometer-half","Sauerstoff":"bi-wind","O₂-Sättigung":"bi-percent",
+    "Trübung":"bi-eye","pH-Wert":"bi-beaker","Leitfähigkeit":"bi-lightning-charge"
+  };
+  return icons[label]||"bi-droplet";
+}
 function renderQuality(station){
   const box=$("quality"); if(!box) return;
   const d=window.WQ_DATA||{items:[]};
   const items=d.items||[];
   const sourceUrl=station&&safeHttpUrl(station.sourceUrl);
   if(!items.length){
-    box.innerHTML='<div class="qtile"><div class="lbl">🌡️ Wasserqualität</div>'+
+    box.innerHTML='<div class="qtile"><div class="lbl"><i class="bi bi-droplet"></i> Wasserqualität</div>'+
       '<div class="hint">Für diese Station sind gerade keine nutzbaren Werte im Datenbestand.</div>'+
-      (sourceUrl?'<a class="go" target="_blank" rel="noopener" href="'+esc(sourceUrl)+'">Amtliche Quelle öffnen ↗</a>':"")+'</div>';
+      (sourceUrl?'<a class="go" target="_blank" rel="noopener" href="'+esc(sourceUrl)+'">Amtliche Quelle öffnen <i class="bi bi-arrow-up-right"></i></a>':"")+'</div>';
     const st=$("qStamp");
     if(st) st.textContent="Keine aktuellen Qualitätswerte verfügbar.";
     return;
@@ -491,7 +498,7 @@ function renderQuality(station){
     const badge = cls ? '<span class="pgbadge '+cls.c+'">'+cls.t+'</span>' : '';
     const stripe = cls ? stripeColor(cls.c) : "var(--water)";
     const clk = CHARTABLE[it.label] ? ' clickable" onclick="openChart(\'wq:'+it.label+'\')' : '';
-    return '<div class="tile'+clk+'" style="border-top-color:'+stripe+'"><div class="lbl">'+esc(it.icon||"•")+' '+esc(it.label)+'</div>'+
+    return '<div class="tile'+clk+'" style="border-top-color:'+stripe+'"><div class="lbl"><i class="bi '+qualityIcon(it.label)+'"></i> '+esc(it.label)+'</div>'+
       '<div class="val">'+esc(it.value!=null?it.value:fmt(value,1))+' <small>'+esc(it.unit||"")+'</small></div>'+
       '<div class="meta">'+badge+'Stand: '+esc(it.time||"–")+'</div></div>';
   }).join("");
@@ -501,7 +508,7 @@ function renderQuality(station){
     const updated=d.updated||d.generatedAt||"unbekannt";
     const stateText=d.fetch&&d.fetch.state==="fallback"?" · letzter verfügbarer Datenstand":"";
     st.innerHTML='Importiert am '+esc(updated)+' · '+esc(provider)+stateText+
-      (sourceUrl?' · <a href="'+esc(sourceUrl)+'" target="_blank" rel="noopener">Amtliche Quelle ↗</a>':"");
+      (sourceUrl?' · <a href="'+esc(sourceUrl)+'" target="_blank" rel="noopener">Amtliche Quelle <i class="bi bi-arrow-up-right"></i></a>':"");
   }
 }
 
@@ -549,10 +556,10 @@ function captureGps(){
   $("gpsBtn").textContent="… wird geortet";
   navigator.geolocation.getCurrentPosition(p=>{
     setSelectedLocation(p.coords.latitude, p.coords.longitude, p.coords.accuracy, true);
-    $("gpsBtn").textContent="📍 Standort aktualisieren";
+    $("gpsBtn").textContent="Standort aktualisieren";
   }, ()=>{
     $("gpsInfo").textContent="Ortung abgelehnt/fehlgeschlagen – Fang wird ohne Standort gespeichert.";
-    $("gpsBtn").textContent="📍 Handy-Standort";
+    $("gpsBtn").textContent="Handy-Standort";
   }, {enableHighAccuracy:true, timeout:10000, maximumAge:0});
 }
 
@@ -617,9 +624,9 @@ function renderCatches(){
     if(c.mondphase&&c.mondphase.name) cond.push(c.mondphase.name);
     return '<div class="fbitem"><div class="h"><span class="fish">'+esc(c.fischart)+
       (c.groesse_cm?' · '+esc(c.groesse_cm)+' cm':'')+(c.gewicht_g?' · '+esc(c.gewicht_g)+' g':'')+'</span>'+
-      '<button class="del" onclick="deleteCatch('+Number(c.id)+')">löschen ✕</button></div>'+
+      '<button class="del" onclick="deleteCatch('+Number(c.id)+')">Löschen</button></div>'+
       '<div class="when">'+esc(c.datum||"")+' '+esc(c.uhrzeit||"")+' · '+esc(c.gewaesser||"")+
-      (c.koeder?' · '+esc(c.koeder):'')+(c.methode?' · '+esc(c.methode):'')+(c.gps?' · 📍':'')+'</div>'+
+      (c.koeder?' · '+esc(c.koeder):'')+(c.methode?' · '+esc(c.methode):'')+(c.gps?' · Standort gespeichert':'')+'</div>'+
       (cond.length?'<div class="fbcond">'+esc(cond.join(" · "))+'</div>':'')+
       (c.notiz?'<div class="fbcond">„'+esc(c.notiz)+'"</div>':'')+'</div>';
   }).join("");
@@ -733,7 +740,7 @@ function renderFavorites(){
     if(found) select.value=found.id;
   }
   const b=$("favoriteBtn");
-  if(b) b.textContent=found?"★ Favorit entfernen":"☆ Als Favorit speichern";
+  if(b) b.textContent=found?"Favorit entfernen":"Als Favorit speichern";
 }
 function fillStationControls(){
   const area=$("areaStationSelect"),gs=$("gaugeSelect"),qs=$("qualitySelect");
@@ -782,7 +789,7 @@ function updateSelectionUI(pan){
       :CATALOG.gauges.length+" Pegel und "+CATALOG.qualityStations.length+" Gütestationen verfügbar · Zuordnung anhand des Rhein-km (Näherung)."+
         (APP_SELECTION.manualGauge||APP_SELECTION.manualQuality?" Manuelle Datenquelle aktiv.":"");
   }
-  if($("mapCoords")) $("mapCoords").textContent="📍 "+s.lat.toFixed(4)+"° N, "+s.lon.toFixed(4)+"° O";
+  if($("mapCoords")) $("mapCoords").textContent=s.lat.toFixed(4)+"° N, "+s.lon.toFixed(4)+"° O";
   if($("spotOsmLink")) $("spotOsmLink").href="https://www.openstreetmap.org/?mlat="+s.lat+"&mlon="+s.lon+"#map=14/"+s.lat+"/"+s.lon;
   if($("spotGoogleLink")) $("spotGoogleLink").href="https://www.google.com/maps/search/?api=1&query="+s.lat+","+s.lon;
   const water=$("f_gewaesser");
@@ -806,7 +813,7 @@ function initMap(){
       setSelectedLocation(e.latlng.lat,e.latlng.lng,null,false);
       MARKING=false;
       const hb=$("markHint");
-      if(hb){ hb.innerHTML='✓ Fangort markiert. <a href="#" onclick="scrollToSave();return false;">↑ zum Speichern</a>'; hb.style.display="block"; }
+      if(hb){ hb.innerHTML='Fangort markiert. <a href="#" onclick="scrollToSave();return false;">Zum Speichern</a>'; hb.style.display="block"; }
     }else{
       setFishingSpot(e.latlng.lat,e.latlng.lng,{pan:false});
     }
@@ -819,7 +826,7 @@ function renderSelectionMarker(pan){
   if(!MAP||!window.L) return;
   const s=APP_SELECTION.spot;
   if(!SPOT_MARKER){
-    SPOT_MARKER=L.circleMarker([s.lat,s.lon],{radius:9,color:"#fbbf24",weight:3,fillColor:"#fbbf24",fillOpacity:.6,bubblingMouseEvents:false})
+    SPOT_MARKER=L.circleMarker([s.lat,s.lon],{radius:9,color:"#ff9500",weight:3,fillColor:"#ff9500",fillOpacity:.6,bubblingMouseEvents:false})
       .addTo(MAP).bindTooltip("Dein Angelbereich");
   }else SPOT_MARKER.setLatLng([s.lat,s.lon]);
   if(pan){ try{ MAP.setView([s.lat,s.lon],Math.max(MAP.getZoom()||12,13)); }catch(_){} }
@@ -829,19 +836,19 @@ function renderStationMarkers(){
   STATION_LAYER.clearLayers(); ROUTE_LAYER.clearLayers();
   const route=CATALOG.gauges.filter(g=>g.riverKm!=null).sort((a,b)=>a.riverKm-b.riverKm);
   if(route.length>1){
-    L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#38bdf8",weight:3,opacity:.38,interactive:false}).addTo(ROUTE_LAYER);
+    L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#007aff",weight:3,opacity:.38,interactive:false}).addTo(ROUTE_LAYER);
   }
   CATALOG.gauges.forEach(g=>{
     const chosen=g.id===APP_SELECTION.gaugeId;
     const marker=L.circleMarker([g.latitude,g.longitude],{
-      radius:chosen?9:7,color:"#38bdf8",weight:chosen?3:1.5,fillColor:"#38bdf8",fillOpacity:chosen?.95:.65,bubblingMouseEvents:false
+      radius:chosen?9:7,color:"#007aff",weight:chosen?3:1.5,fillColor:"#007aff",fillOpacity:chosen?.95:.65,bubblingMouseEvents:false
     }).addTo(STATION_LAYER);
     marker.bindTooltip(esc("Pegel "+stationLabel(g.name)+(g.riverKm!=null?" · km "+fmt(g.riverKm,1):"")));
     marker.on("click",()=>selectAreaStation(g.id));
   });
   CATALOG.qualityStations.forEach(q=>{
     const chosen=q.id===APP_SELECTION.qualityId;
-    const available=q.fetchState!=="unavailable",color=available?"#2dd4bf":"#8ea2be";
+    const available=q.fetchState!=="unavailable",color=available?"#32ade6":"#8e8e93";
     const marker=L.circleMarker([q.latitude,q.longitude],{
       radius:chosen?9:7,color,weight:chosen?3:1.5,fillColor:color,fillOpacity:chosen?.95:(available?.7:.35),bubblingMouseEvents:false
     }).addTo(STATION_LAYER);
@@ -861,14 +868,14 @@ function setSelectedLocation(lat, lon, acc, pan){
   }
   const extra = CURRENT_GPS.genauigkeit_m!=null ? " (Handy, ±"+CURRENT_GPS.genauigkeit_m+" m)" : " (auf Karte gewählt)";
   const gi=$("gpsInfo");
-  if(gi) gi.innerHTML='📍 Fangort: '+CURRENT_GPS.lat+', '+CURRENT_GPS.lon+extra+
+  if(gi) gi.innerHTML='Fangort: '+CURRENT_GPS.lat+', '+CURRENT_GPS.lon+extra+
     ' · <a href="#" onclick="clearSelectedLocation();return false;">entfernen</a>';
 }
 function clearSelectedLocation(){
   CURRENT_GPS=null; MARKING=false;
   if(CATCH_SELECT_MARKER && MAP){ MAP.removeLayer(CATCH_SELECT_MARKER); CATCH_SELECT_MARKER=null; }
   const gi=$("gpsInfo"); if(gi) gi.textContent="Kein Standort gewählt – nutze die Handy-Ortung oder „Auf Karte markieren\".";
-  const b=$("gpsBtn"); if(b) b.textContent="📍 Handy-Standort";
+  const b=$("gpsBtn"); if(b) b.textContent="Handy-Standort";
   const hb=$("markHint"); if(hb) hb.style.display="none";
 }
 function renderMarkers(){
@@ -881,7 +888,7 @@ function renderMarkers(){
       '<br>'+esc(c.datum||"")+' '+esc(c.uhrzeit||"")+(c.koeder?'<br>Köder: '+esc(c.koeder):'')+
       (wa.pegelstand_cm!=null?'<br>Pegel: '+esc(wa.pegelstand_cm)+' cm':'')+
       (wa.wassertemperatur_c!=null?'<br>Wasser: '+esc(wa.wassertemperatur_c)+' °C':'');
-    L.circleMarker([num(c.gps.lat),num(c.gps.lon)],{radius:6,color:"#4ade80",weight:2,fillColor:"#4ade80",fillOpacity:.85})
+    L.circleMarker([num(c.gps.lat),num(c.gps.lon)],{radius:6,color:"#34c759",weight:2,fillColor:"#34c759",fillOpacity:.85})
       .bindPopup(html).addTo(CATCH_LAYER);
   });
 }
@@ -895,7 +902,7 @@ function cancelMarking(){
 function markOnMap(){
   MARKING=true;
   if(!MAP) initMap();
-  const hb=$("markHint"); if(hb){ hb.innerHTML="👆 Tippe auf die Karte an die Stelle deines Fangs."; hb.style.display="block"; }
+  const hb=$("markHint"); if(hb){ hb.innerHTML="Tippe auf der Karte auf die Stelle deines Fangs."; hb.style.display="block"; }
   const m=document.getElementById("map"); if(m) m.scrollIntoView({behavior:"smooth", block:"center"});
 }
 function scrollToSave(){ const b=document.getElementById("fbSaveBtn"); if(b) b.scrollIntoView({behavior:"smooth", block:"center"}); }
@@ -916,8 +923,8 @@ function renderTable(){
 function toggleTable(){
   const box=$("fbTable"), b=$("tblBtn"); if(!box) return;
   const show=(box.style.display==="none" || !box.style.display);
-  if(show){ renderTable(); box.style.display="block"; if(b) b.textContent="📋 Tabelle ausblenden"; }
-  else { box.style.display="none"; if(b) b.textContent="📋 Tabelle anzeigen"; }
+  if(show){ renderTable(); box.style.display="block"; if(b) b.textContent="Tabelle ausblenden"; }
+  else { box.style.display="none"; if(b) b.textContent="Tabelle anzeigen"; }
 }
 function toggleList(){
   const box=$("fbList"), b=$("listBtn"); if(!box) return;
@@ -946,19 +953,19 @@ function initFangbuch(){
 let CHART=null, CHART_KEY=null, CHART_RANGE="24h";
 const HIST={};
 const CHART_DEFS={
-  pegel:      {title:"Pegelstand",     unit:"cm",   color:"#38bdf8", src:"pegel"},
-  durchfluss: {title:"Durchfluss",     unit:"m³/s", color:"#2dd4bf", src:"durchfluss"},
-  airTemp:    {title:"Lufttemperatur", unit:"°C",   color:"#fbbf24", src:"wx:temperature_2m"},
-  wind:       {title:"Wind",           unit:"km/h", color:"#2dd4bf", src:"wx:wind_speed_10m"},
-  rain:       {title:"Niederschlag",   unit:"mm/h", color:"#38bdf8", src:"wx:precipitation"},
-  press:      {title:"Luftdruck",      unit:"hPa",  color:"#fbbf24", src:"wx:pressure_msl"},
-  cloud:      {title:"Bewölkung",      unit:"%",    color:"#8ea2be", src:"wx:cloud_cover"}
+  pegel:      {title:"Pegelstand",     unit:"cm",   color:"#007aff", src:"pegel"},
+  durchfluss: {title:"Durchfluss",     unit:"m³/s", color:"#32ade6", src:"durchfluss"},
+  airTemp:    {title:"Lufttemperatur", unit:"°C",   color:"#ff9500", src:"wx:temperature_2m"},
+  wind:       {title:"Wind",           unit:"km/h", color:"#32ade6", src:"wx:wind_speed_10m"},
+  rain:       {title:"Niederschlag",   unit:"mm/h", color:"#007aff", src:"wx:precipitation"},
+  press:      {title:"Luftdruck",      unit:"hPa",  color:"#ff9500", src:"wx:pressure_msl"},
+  cloud:      {title:"Bewölkung",      unit:"%",    color:"#8e8e93", src:"wx:cloud_cover"}
 };
 const WQ_UNIT={"Wassertemperatur":"°C","Sauerstoff":"mg/l","O₂-Sättigung":"%","Trübung":"FNU","pH-Wert":"","Leitfähigkeit":"µS/cm"};
-const WQ_COLOR={"Wassertemperatur":"#fbbf24","Sauerstoff":"#4ade80","O₂-Sättigung":"#4ade80","Trübung":"#8ea2be","pH-Wert":"#a78bfa","Leitfähigkeit":"#2dd4bf"};
+const WQ_COLOR={"Wassertemperatur":"#ff9500","Sauerstoff":"#34c759","O₂-Sättigung":"#34c759","Trübung":"#8e8e93","pH-Wert":"#af52de","Leitfähigkeit":"#32ade6"};
 function defFor(key){
   if(CHART_DEFS[key]) return CHART_DEFS[key];
-  if(key.indexOf("wq:")===0){ const l=key.slice(3); return {title:l, unit:WQ_UNIT[l]||"", color:WQ_COLOR[l]||"#38bdf8", src:key}; }
+  if(key.indexOf("wq:")===0){ const l=key.slice(3); return {title:l, unit:WQ_UNIT[l]||"", color:WQ_COLOR[l]||"#007aff", src:key}; }
   return null;
 }
 function toHourly(pts){
@@ -1022,13 +1029,16 @@ async function setChartRange(range){
 function drawChart(labels, values, def){
   const cv=$("cmChart"); if(!cv || !window.Chart) return;
   if(CHART) CHART.destroy();
+  const css=getComputedStyle(document.documentElement);
+  const muted=css.getPropertyValue("--muted").trim()||"#8e8e93";
+  const line=css.getPropertyValue("--line").trim()||"rgba(60,60,67,.18)";
   CHART=new Chart(cv.getContext("2d"),{
     type:"line",
     data:{labels, datasets:[{data:values, borderColor:def.color, backgroundColor:def.color+"22", borderWidth:2, pointRadius:0, fill:true, tension:.25}]},
     options:{responsive:true, maintainAspectRatio:false, animation:false,
       plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmt(c.parsed.y,1)+" "+def.unit}}},
-      scales:{x:{ticks:{color:"#8ea2be", maxTicksLimit:7, maxRotation:0, autoSkip:true}, grid:{color:"#1c2635"}},
-              y:{ticks:{color:"#8ea2be"}, grid:{color:"#1c2635"}}}}
+      scales:{x:{ticks:{color:muted, maxTicksLimit:7, maxRotation:0, autoSkip:true}, grid:{color:line}},
+              y:{ticks:{color:muted}, grid:{color:line}}}}
   });
 }
 
@@ -1130,14 +1140,14 @@ function renderBite(){
 function toggleBite(){
   const box=$("biteBox"), b=$("biteBtn"); if(!box) return;
   const show=(box.style.display==="none"||!box.style.display);
-  if(show){ renderBite(); box.style.display="block"; if(b) b.textContent="🎯 Beißwetter ausblenden"; }
-  else { box.style.display="none"; if(b) b.textContent="🎯 Beißwetter anzeigen"; }
+  if(show){ renderBite(); box.style.display="block"; if(b) b.textContent="Einschätzung ausblenden"; }
+  else { box.style.display="none"; if(b) b.textContent="Einschätzung anzeigen"; }
 }
 function toggleFangbuch(){
   const box=$("fangbuchBox"), b=$("fangbuchBtn"); if(!box) return;
   const show=(box.style.display==="none"||!box.style.display);
   box.style.display = show?"block":"none";
-  if(b) b.textContent = show?"📒 Fangbuch ausblenden":"📒 Fangbuch anzeigen";
+  if(b) b.textContent = show?"Fangbuch ausblenden":"Fangbuch anzeigen";
 }
 
 async function loadAll(){

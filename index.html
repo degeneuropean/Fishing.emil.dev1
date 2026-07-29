@@ -3,15 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0a0e14">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f2f2f7">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
   <title>Rhein-Check · Angelbedingungen am deutschen Rhein</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
   <header class="app-header">
     <div class="brand">
-      <div class="logo" aria-hidden="true">🎣</div>
+      <div class="logo" aria-hidden="true"><i class="bi bi-water"></i></div>
       <div>
         <h1>Rhein-Check</h1>
         <div class="sub" id="headerSub">Deine Angelplätze am deutschen Rhein</div>
@@ -19,7 +21,7 @@
     </div>
     <div class="header-status" id="headerStatus" hidden>
       <div class="updated" id="updated">Messstellen werden geladen …</div>
-      <button class="icon-button" id="refreshButton" type="button" onclick="loadAll()" aria-label="Daten aktualisieren" title="Daten aktualisieren">↻</button>
+      <button class="icon-button" id="refreshButton" type="button" onclick="loadAll()" aria-label="Daten aktualisieren" title="Daten aktualisieren"><i class="bi bi-arrow-clockwise"></i></button>
     </div>
   </header>
 
@@ -31,11 +33,11 @@
           <h2 id="spotsPageTitle">Angelplätze verwalten</h2>
           <p>Erstelle deine Spots und lege fest, welche Rhein-Messstellen verwendet werden.</p>
         </div>
-        <button class="primary compact" type="button" onclick="openSpotEditor()">＋ Angelplatz hinzufügen</button>
+        <button class="primary compact" type="button" onclick="openSpotEditor()"><i class="bi bi-plus-lg"></i> Angelplatz hinzufügen</button>
       </div>
 
       <div class="empty-state" id="spotsEmpty">
-        <div class="empty-icon" aria-hidden="true">📍</div>
+        <div class="empty-icon" aria-hidden="true"><i class="bi bi-geo-alt"></i></div>
         <h3>Noch kein Angelplatz gespeichert</h3>
         <p>Wähle deinen Platz erst dann auf der Karte aus, wenn du ihn hinzufügen möchtest. Eine Standortfreigabe ist nicht nötig.</p>
         <button class="primary" type="button" onclick="openSpotEditor()">Angelplatz hinzufügen</button>
@@ -58,8 +60,8 @@
             <div class="spotdetail" id="spotDetail">–</div>
           </div>
           <div class="spot-links">
-            <a id="spotOsmLink" target="_blank" rel="noopener">OpenStreetMap ↗</a>
-            <a id="spotGoogleLink" target="_blank" rel="noopener">Google Maps ↗</a>
+            <a id="spotOsmLink" target="_blank" rel="noopener">OpenStreetMap <i class="bi bi-arrow-up-right"></i></a>
+            <a id="spotGoogleLink" target="_blank" rel="noopener">Google Maps <i class="bi bi-arrow-up-right"></i></a>
           </div>
         </article>
 
@@ -100,7 +102,7 @@
       </div>
 
       <div class="empty-state compact-empty" id="dataEmpty">
-        <div class="empty-icon" aria-hidden="true">📊</div>
+        <div class="empty-icon" aria-hidden="true"><i class="bi bi-graph-up"></i></div>
         <h3>Noch keine Datenansicht verfügbar</h3>
         <p>Erstelle zuerst einen Angelplatz und ordne ihm die passenden Messstellen zu.</p>
         <button class="primary" type="button" onclick="navigateTo('spots')">Angelplatz erstellen</button>
@@ -118,13 +120,13 @@
         <div class="section-title" id="riverHeading">Wasser · Pegel</div>
         <div class="grid">
           <div class="tile clickable" id="tilePegel" onclick="openChart('pegel')">
-            <div class="lbl"><span class="ico">📏</span> Pegelstand</div>
+            <div class="lbl"><span class="ico"><i class="bi bi-rulers"></i></span> Pegelstand</div>
             <div class="val" id="pegelVal">–</div>
             <svg class="spark" id="pegelSpark" preserveAspectRatio="none" viewBox="0 0 100 34"></svg>
             <div class="meta" id="pegelMeta">–</div>
           </div>
           <div class="tile clickable" onclick="openChart('durchfluss')">
-            <div class="lbl"><span class="ico">🌊</span> Durchfluss</div>
+            <div class="lbl"><span class="ico"><i class="bi bi-water"></i></span> Durchfluss</div>
             <div class="val" id="qVal">–</div>
             <svg class="spark" id="qSpark" preserveAspectRatio="none" viewBox="0 0 100 34"></svg>
             <div class="meta" id="qMeta">–</div>
@@ -135,38 +137,38 @@
         <div class="grid" id="quality"></div>
         <div class="data-stamp" id="qStamp">Die amtlichen Werte werden automatisch aktualisiert.</div>
 
-        <button type="button" class="section-toggle" id="biteBtn" onclick="toggleBite()">🎯 Einschätzung nach Fischart anzeigen</button>
+        <button type="button" class="section-toggle" id="biteBtn" onclick="toggleBite()"><i class="bi bi-bullseye"></i> Einschätzung nach Fischart anzeigen</button>
         <div id="biteBox" hidden></div>
 
         <div class="section-title" id="weatherHeading">Wetter am Angelplatz</div>
         <div class="grid">
           <div class="tile clickable" onclick="openChart('airTemp')">
-            <div class="lbl"><span class="ico">🌡️</span> Lufttemperatur</div>
+            <div class="lbl"><span class="ico"><i class="bi bi-thermometer-half"></i></span> Lufttemperatur</div>
             <div class="val" id="airVal">–</div>
             <div class="meta" id="airMeta">gefühlt –</div>
           </div>
           <div class="tile clickable" onclick="openChart('wind')">
-            <div class="lbl"><span class="ico">💨</span> Wind</div>
+            <div class="lbl"><span class="ico"><i class="bi bi-wind"></i></span> Wind</div>
             <div class="val" id="windVal">–</div>
             <div class="meta" id="windMeta">Böen –</div>
           </div>
           <div class="tile clickable" onclick="openChart('rain')">
-            <div class="lbl"><span class="ico">🌧️</span> Niederschlag</div>
+            <div class="lbl"><span class="ico"><i class="bi bi-cloud-rain"></i></span> Niederschlag</div>
             <div class="val" id="rainVal">–</div>
             <div class="meta" id="rainMeta">heute –</div>
           </div>
           <div class="tile clickable" onclick="openChart('press')">
-            <div class="lbl"><span class="ico">📊</span> Luftdruck</div>
+            <div class="lbl"><span class="ico"><i class="bi bi-speedometer2"></i></span> Luftdruck</div>
             <div class="val" id="pressVal">–</div>
             <div class="meta" id="pressMeta">Tendenz –</div>
           </div>
           <div class="tile clickable" onclick="openChart('cloud')">
-            <div class="lbl"><span class="ico">🌥️</span> Himmel</div>
+            <div class="lbl"><span class="ico"><i class="bi bi-cloud"></i></span> Himmel</div>
             <div class="val smaller" id="skyVal">–</div>
             <div class="meta" id="skyMeta">Bewölkung – · Feuchte –</div>
           </div>
           <div class="tile">
-            <div class="lbl"><span class="ico">🌅</span> Sonne</div>
+            <div class="lbl"><span class="ico"><i class="bi bi-sun"></i></span> Sonne</div>
             <div class="val smaller" id="sunVal">–</div>
             <div class="meta" id="sunMeta">Auf – · Unter –</div>
           </div>
@@ -193,7 +195,7 @@
         </div>
         <aside class="station-detail" id="stationDetail">
           <div class="empty-detail">
-            <div class="empty-icon small" aria-hidden="true">🗺️</div>
+            <div class="empty-icon small" aria-hidden="true"><i class="bi bi-map"></i></div>
             <h3>Messstation auswählen</h3>
             <p>Blaue Punkte zeigen Pegelstationen, türkise Punkte Messstellen für Wasserqualität.</p>
           </div>
@@ -214,7 +216,7 @@
       <div id="activeTripCard"></div>
 
       <div class="empty-state compact-empty" id="logbookEmpty">
-        <div class="empty-icon" aria-hidden="true">📖</div>
+        <div class="empty-icon" aria-hidden="true"><i class="bi bi-journal-text"></i></div>
         <h3>Noch kein Trip im Logbuch</h3>
         <p>Starte am gewählten Spot einen Trip. Fänge kannst du währenddessen mit genauer Uhrzeit ergänzen.</p>
         <button class="primary" type="button" onclick="openStartTripDialog()">Ersten Trip starten</button>
@@ -236,16 +238,16 @@
 
   <nav class="bottom-nav" aria-label="Hauptnavigation">
     <button type="button" class="nav-item active" data-tab="spots" onclick="navigateTo('spots')">
-      <span class="nav-icon" aria-hidden="true">📍</span><span>Spots</span>
+      <span class="nav-icon" aria-hidden="true"><i class="bi bi-geo-alt"></i></span><span>Spots</span>
     </button>
     <button type="button" class="nav-item" data-tab="data" onclick="navigateTo('data')">
-      <span class="nav-icon" aria-hidden="true">📊</span><span>Daten</span>
+      <span class="nav-icon" aria-hidden="true"><i class="bi bi-graph-up"></i></span><span>Daten</span>
     </button>
     <button type="button" class="nav-item" data-tab="map" onclick="navigateTo('map')">
-      <span class="nav-icon" aria-hidden="true">🗺️</span><span>Karte</span>
+      <span class="nav-icon" aria-hidden="true"><i class="bi bi-map"></i></span><span>Karte</span>
     </button>
     <button type="button" class="nav-item" data-tab="logbook" onclick="navigateTo('logbook')">
-      <span class="nav-icon" aria-hidden="true">📖</span><span>Logbuch</span>
+      <span class="nav-icon" aria-hidden="true"><i class="bi bi-journal-text"></i></span><span>Logbuch</span>
     </button>
   </nav>
 
@@ -256,7 +258,7 @@
           <div class="eyebrow">Angelplatz</div>
           <h2 id="spotDialogTitle">Angelplatz hinzufügen</h2>
         </div>
-        <button class="close-button" type="button" onclick="closeDialog('spotDialog')" aria-label="Schließen">✕</button>
+        <button class="close-button" type="button" onclick="closeDialog('spotDialog')" aria-label="Schließen"><i class="bi bi-x-lg"></i></button>
       </div>
       <p class="sheet-intro">Tippe den Angelplatz auf der Karte an, gib ihm einen Namen und prüfe die automatisch vorgeschlagenen Rhein-Messstellen.</p>
       <div class="editor-grid">
@@ -295,7 +297,7 @@
     <form method="dialog" class="sheet" onsubmit="return false">
       <div class="sheet-head">
         <div><div class="eyebrow">Logbuch</div><h2 id="tripDialogTitle">Trip starten</h2></div>
-        <button class="close-button" type="button" onclick="closeDialog('tripDialog')" aria-label="Schließen">✕</button>
+        <button class="close-button" type="button" onclick="closeDialog('tripDialog')" aria-label="Schließen"><i class="bi bi-x-lg"></i></button>
       </div>
       <div id="tripDialogBody"></div>
     </form>
@@ -305,7 +307,7 @@
     <form method="dialog" class="sheet" onsubmit="return false">
       <div class="sheet-head">
         <div><div class="eyebrow">Fang</div><h2>Fang hinzufügen</h2></div>
-        <button class="close-button" type="button" onclick="closeDialog('catchDialog')" aria-label="Schließen">✕</button>
+        <button class="close-button" type="button" onclick="closeDialog('catchDialog')" aria-label="Schließen"><i class="bi bi-x-lg"></i></button>
       </div>
       <div id="catchDialogBody"></div>
     </form>
@@ -324,7 +326,7 @@
 
   <div id="chartModal" class="chart-modal" hidden onclick="if(event.target===this)closeChart()">
     <div class="chart-box">
-      <div class="chart-head"><span id="cmTitle"></span><button class="close-button" onclick="closeChart()" aria-label="Schließen">✕</button></div>
+      <div class="chart-head"><span id="cmTitle"></span><button class="close-button" onclick="closeChart()" aria-label="Schließen"><i class="bi bi-x-lg"></i></button></div>
       <div class="chart-tabs"><button id="cmt24" onclick="setChartRange('24h')">24 Stunden</button><button id="cmt7" onclick="setChartRange('7d')">7 Tage</button></div>
       <div class="chart-canvas"><canvas id="cmChart"></canvas></div>
       <div id="cmMeta" class="muted-note"></div>
@@ -333,7 +335,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js?v=6"></script>
-  <script src="ui.js?v=6"></script>
+  <script src="app.js?v=7"></script>
+  <script src="ui.js?v=7"></script>
 </body>
 </html>
