@@ -349,14 +349,14 @@ async function loadPegel(token){
     const pc = classifyPegel(last.value,gauge);
     const title=pc.refs?('Einordnung nach Hauptwerten: MNW '+fmt(pc.refs.MNW)+' · MW '+fmt(pc.refs.MW)+' · MHW '+fmt(pc.refs.MHW)+' cm'):"Für diese Station liegen keine vollständigen Hauptwerte vor";
     $("pegelMeta").innerHTML = '<span class="pgbadge '+pc.c+'" title="'+title+'">'+pc.t+'</span>'+trendBadge(w)+' · '+relTime(last.timestamp);
-    sparkline($("pegelSpark"), w.slice(-96), "#007aff");
+    sparkline($("pegelSpark"), w.slice(-96), "#021359");
     const pt=$("tilePegel"); if(pt) pt.style.borderTopColor = stripeColor(pc.c);
     state.pegelTrend = w;
     snap.pegel = { pegelstand_cm: last.value, stufe: pc.t, station:gauge.name, station_id:gauge.id };
   }catch(e){
     if(token!==SELECTION_VERSION) return;
     $("pegelVal").innerHTML='<span class="err">n/v</span>'; $("pegelMeta").textContent="Pegel nicht erreichbar";
-    sparkline($("pegelSpark"),[],"#007aff");
+    sparkline($("pegelSpark"),[],"#021359");
   }
   if(!supportsSeries(gauge,"Q")){
     if(token!==SELECTION_VERSION) return;
@@ -836,12 +836,12 @@ function renderStationMarkers(){
   STATION_LAYER.clearLayers(); ROUTE_LAYER.clearLayers();
   const route=CATALOG.gauges.filter(g=>g.riverKm!=null).sort((a,b)=>a.riverKm-b.riverKm);
   if(route.length>1){
-    L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#007aff",weight:3,opacity:.38,interactive:false}).addTo(ROUTE_LAYER);
+    L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#021359",weight:3,opacity:.38,interactive:false}).addTo(ROUTE_LAYER);
   }
   CATALOG.gauges.forEach(g=>{
     const chosen=g.id===APP_SELECTION.gaugeId;
     const marker=L.circleMarker([g.latitude,g.longitude],{
-      radius:chosen?9:7,color:"#007aff",weight:chosen?3:1.5,fillColor:"#007aff",fillOpacity:chosen?.95:.65,bubblingMouseEvents:false
+      radius:chosen?9:7,color:"#021359",weight:chosen?3:1.5,fillColor:"#021359",fillOpacity:chosen?.95:.65,bubblingMouseEvents:false
     }).addTo(STATION_LAYER);
     marker.bindTooltip(esc("Pegel "+stationLabel(g.name)+(g.riverKm!=null?" · km "+fmt(g.riverKm,1):"")));
     marker.on("click",()=>selectAreaStation(g.id));
@@ -953,11 +953,11 @@ function initFangbuch(){
 let CHART=null, CHART_KEY=null, CHART_RANGE="24h";
 const HIST={};
 const CHART_DEFS={
-  pegel:      {title:"Pegelstand",     unit:"cm",   color:"#007aff", src:"pegel"},
+  pegel:      {title:"Pegelstand",     unit:"cm",   color:"#021359", src:"pegel"},
   durchfluss: {title:"Durchfluss",     unit:"m³/s", color:"#32ade6", src:"durchfluss"},
   airTemp:    {title:"Lufttemperatur", unit:"°C",   color:"#ff9500", src:"wx:temperature_2m"},
   wind:       {title:"Wind",           unit:"km/h", color:"#32ade6", src:"wx:wind_speed_10m"},
-  rain:       {title:"Niederschlag",   unit:"mm/h", color:"#007aff", src:"wx:precipitation"},
+  rain:       {title:"Niederschlag",   unit:"mm/h", color:"#021359", src:"wx:precipitation"},
   press:      {title:"Luftdruck",      unit:"hPa",  color:"#ff9500", src:"wx:pressure_msl"},
   cloud:      {title:"Bewölkung",      unit:"%",    color:"#8e8e93", src:"wx:cloud_cover"}
 };
@@ -965,7 +965,7 @@ const WQ_UNIT={"Wassertemperatur":"°C","Sauerstoff":"mg/l","O₂-Sättigung":"%
 const WQ_COLOR={"Wassertemperatur":"#ff9500","Sauerstoff":"#34c759","O₂-Sättigung":"#34c759","Trübung":"#8e8e93","pH-Wert":"#af52de","Leitfähigkeit":"#32ade6"};
 function defFor(key){
   if(CHART_DEFS[key]) return CHART_DEFS[key];
-  if(key.indexOf("wq:")===0){ const l=key.slice(3); return {title:l, unit:WQ_UNIT[l]||"", color:WQ_COLOR[l]||"#007aff", src:key}; }
+  if(key.indexOf("wq:")===0){ const l=key.slice(3); return {title:l, unit:WQ_UNIT[l]||"", color:WQ_COLOR[l]||"#021359", src:key}; }
   return null;
 }
 function toHourly(pts){

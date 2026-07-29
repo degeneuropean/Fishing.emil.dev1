@@ -214,9 +214,9 @@ function renderEditorStations(){
   if(!UI_SPOT_MAP||!UI_SPOT_LAYER)return;
   UI_SPOT_LAYER.clearLayers();UI_SPOT_ROUTE.clearLayers();
   const route=CATALOG.gauges.filter(g=>g.riverKm!=null).sort((a,b)=>a.riverKm-b.riverKm);
-  if(route.length>1)L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#007aff",weight:3,opacity:.3,interactive:false}).addTo(UI_SPOT_ROUTE);
+  if(route.length>1)L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#021359",weight:3,opacity:.3,interactive:false}).addTo(UI_SPOT_ROUTE);
   CATALOG.gauges.forEach(g=>{
-    const marker=L.circleMarker([g.latitude,g.longitude],{radius:5,color:"#007aff",weight:1.5,fillColor:"#007aff",fillOpacity:.75,bubblingMouseEvents:false}).addTo(UI_SPOT_LAYER);
+    const marker=L.circleMarker([g.latitude,g.longitude],{radius:5,color:"#021359",weight:1.5,fillColor:"#021359",fillOpacity:.75,bubblingMouseEvents:false}).addTo(UI_SPOT_LAYER);
     marker.bindTooltip("Pegel "+stationLabel(g.name));marker.on("click",()=>setEditorCandidate(g.latitude,g.longitude,true,"Bei "+stationLabel(g.name)));
   });
   CATALOG.qualityStations.forEach(q=>{
@@ -316,9 +316,9 @@ function renderExplorerMarkers(){
   if(!UI_EXPLORER_MAP||!UI_EXPLORER_STATIONS)return;
   UI_EXPLORER_STATIONS.clearLayers();UI_EXPLORER_ROUTE.clearLayers();UI_EXPLORER_SPOTS.clearLayers();
   const route=CATALOG.gauges.filter(g=>g.riverKm!=null).sort((a,b)=>a.riverKm-b.riverKm);
-  if(route.length>1)L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#007aff",weight:3,opacity:.34,interactive:false}).addTo(UI_EXPLORER_ROUTE);
+  if(route.length>1)L.polyline(route.map(g=>[g.latitude,g.longitude]),{color:"#021359",weight:3,opacity:.34,interactive:false}).addTo(UI_EXPLORER_ROUTE);
   if($("filterGauges")?.checked!==false)CATALOG.gauges.forEach(g=>{
-    const marker=L.circleMarker([g.latitude,g.longitude],{radius:7,color:"#007aff",weight:2,fillColor:"#007aff",fillOpacity:.76,bubblingMouseEvents:false}).addTo(UI_EXPLORER_STATIONS);
+    const marker=L.circleMarker([g.latitude,g.longitude],{radius:7,color:"#021359",weight:2,fillColor:"#021359",fillOpacity:.76,bubblingMouseEvents:false}).addTo(UI_EXPLORER_STATIONS);
     marker.bindTooltip("Pegel "+stationLabel(g.name)+(g.riverKm!=null?" · km "+fmt(g.riverKm,1):""));
     marker.on("click",()=>openStationDetail("gauge",g.id));
   });
