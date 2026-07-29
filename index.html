@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0a0e14">
   <title>Rhein-Check · Angelbedingungen am deutschen Rhein</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
   <header class="app-header">
@@ -17,7 +17,7 @@
         <div class="sub" id="headerSub">Deine Angelplätze am deutschen Rhein</div>
       </div>
     </div>
-    <div class="header-status">
+    <div class="header-status" id="headerStatus" hidden>
       <div class="updated" id="updated">Messstellen werden geladen …</div>
       <button class="icon-button" id="refreshButton" type="button" onclick="loadAll()" aria-label="Daten aktualisieren" title="Daten aktualisieren">↻</button>
     </div>
@@ -28,8 +28,8 @@
       <div class="page-heading">
         <div>
           <div class="eyebrow">Meine Angelplätze</div>
-          <h2 id="spotsPageTitle">Bedingungen am Spot</h2>
-          <p>Speichere Angelplätze unabhängig von deinem aktuellen Standort.</p>
+          <h2 id="spotsPageTitle">Angelplätze verwalten</h2>
+          <p>Erstelle deine Spots und lege fest, welche Rhein-Messstellen verwendet werden.</p>
         </div>
         <button class="primary compact" type="button" onclick="openSpotEditor()">＋ Angelplatz hinzufügen</button>
       </div>
@@ -53,7 +53,7 @@
 
         <article class="spot-summary">
           <div>
-            <div class="eyebrow">Aktiver Angelplatz</div>
+            <div class="eyebrow">Ausgewählter Angelplatz</div>
             <h2 id="spotTitle">–</h2>
             <div class="spotdetail" id="spotDetail">–</div>
           </div>
@@ -84,7 +84,29 @@
           </div>
           <div class="selectionnote" id="selectionNote">–</div>
         </div>
+      </div>
+    </section>
 
+    <section class="app-page" id="page-data" data-page="data" aria-labelledby="dataPageTitle" hidden>
+      <div class="page-heading data-heading">
+        <div>
+          <div class="eyebrow">Live-Bedingungen</div>
+          <h2 id="dataPageTitle">Daten</h2>
+        </div>
+        <label class="data-spot-picker" id="dataSpotPicker">
+          <span>Angelplatz</span>
+          <select id="dataSpotSelect" onchange="activateSpot(this.value)" aria-label="Angelplatz für die Daten auswählen"></select>
+        </label>
+      </div>
+
+      <div class="empty-state compact-empty" id="dataEmpty">
+        <div class="empty-icon" aria-hidden="true">📊</div>
+        <h3>Noch keine Datenansicht verfügbar</h3>
+        <p>Erstelle zuerst einen Angelplatz und ordne ihm die passenden Messstellen zu.</p>
+        <button class="primary" type="button" onclick="navigateTo('spots')">Angelplatz erstellen</button>
+      </div>
+
+      <div id="dataContent" hidden>
         <div class="cond" id="cond">
           <div class="dot lg-amber" id="condDot">…</div>
           <div>
@@ -216,6 +238,9 @@
     <button type="button" class="nav-item active" data-tab="spots" onclick="navigateTo('spots')">
       <span class="nav-icon" aria-hidden="true">📍</span><span>Spots</span>
     </button>
+    <button type="button" class="nav-item" data-tab="data" onclick="navigateTo('data')">
+      <span class="nav-icon" aria-hidden="true">📊</span><span>Daten</span>
+    </button>
     <button type="button" class="nav-item" data-tab="map" onclick="navigateTo('map')">
       <span class="nav-icon" aria-hidden="true">🗺️</span><span>Karte</span>
     </button>
@@ -308,7 +333,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js?v=5"></script>
-  <script src="ui.js?v=5"></script>
+  <script src="app.js?v=6"></script>
+  <script src="ui.js?v=6"></script>
 </body>
 </html>

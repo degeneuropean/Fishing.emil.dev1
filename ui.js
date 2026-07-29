@@ -99,7 +99,8 @@ function syncSelectionFromActive(){
 function activateSpot(id){
   if(!SPOTS.some(s=>s.id===id))return;
   CURRENT_SPOT_ID=id;saveSpots();syncSelectionFromActive();
-  SELECTION_VERSION++;clearHistoryCache();resetLiveTiles();renderSpotsPage();renderExplorerMarkers();loadAll();
+  SELECTION_VERSION++;clearHistoryCache();resetLiveTiles();renderSpotsPage();renderExplorerMarkers();
+  updateHeaderForPage(pageFromHash());loadAll();
 }
 function stationRelation(station,spotKm){
   if(!station||station.riverKm==null||spotKm==null)return "";
@@ -155,16 +156,18 @@ function updateSelectionUI(){
   fillStationControls();
 }
 function renderSpotsPage(){
-  const active=getActiveSpot(),select=$("spotSelect");
+  const active=getActiveSpot(),select=$("spotSelect"),dataSelect=$("dataSpotSelect");
   $("spotsEmpty").hidden=!!active;$("spotContent").hidden=!active;
+  $("dataEmpty").hidden=!!active;$("dataContent").hidden=!active;$("dataSpotPicker").hidden=!active;
   if(!active){
-    $("headerSub").textContent="Deine Angelplätze am deutschen Rhein";
     $("updated").textContent=CATALOG.gauges.length+" Pegel · "+CATALOG.qualityStations.length+" Gütestationen";
     return;
   }
-  select.innerHTML=SPOTS.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+(s.km!=null?" · km "+fmt(s.km,1):"")+'</option>').join("");
+  const options=SPOTS.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+(s.km!=null?" · km "+fmt(s.km,1):"")+'</option>').join("");
+  select.innerHTML=options;
   select.value=active.id;
-  $("headerSub").textContent=(active.km!=null?"Rhein-km "+fmt(active.km,1)+" · ":"")+"Live-Bedingungen für "+active.name;
+  dataSelect.innerHTML=options;
+  dataSelect.value=active.id;
   updateSelectionUI();
 }
 
@@ -268,20 +271,32 @@ function deleteActiveSpot(){
 
 /* ===================== Navigation ===================== */
 function setPage(tab){
-  const allowed=["spots","map","logbook"],next=allowed.includes(tab)?tab:"spots";
+  const allowed=["spots","data","map","logbook"],next=allowed.includes(tab)?tab:"spots";
   document.querySelectorAll(".app-page").forEach(page=>{
     const active=page.dataset.page===next;page.hidden=!active;page.classList.toggle("active",active);
   });
   document.querySelectorAll(".nav-item").forEach(item=>item.classList.toggle("active",item.dataset.tab===next));
+  $("headerStatus").hidden=next!=="data";
+  updateHeaderForPage(next);
   if(next==="map")setTimeout(()=>{initExplorerMap();if(UI_EXPLORER_MAP)UI_EXPLORER_MAP.invalidateSize();},30);
   if(next==="logbook")renderLogbook();
   window.scrollTo({top:0,behavior:"instant"});
+}
+function updateHeaderForPage(tab){
+  const active=getActiveSpot();
+  const text={
+    spots:"Angelplätze und Messstellen verwalten",
+    data:active?((active.km!=null?"Rhein-km "+fmt(active.km,1)+" · ":"")+"Live-Daten für "+active.name):"Live-Daten für deine Angelplätze",
+    map:"Messstellen am deutschen Rhein",
+    logbook:"Deine dokumentierten Angeltrips"
+  };
+  $("headerSub").textContent=text[tab]||text.spots;
 }
 function navigateTo(tab){
   const hash="#/"+tab;
   if(location.hash!==hash)location.hash=hash;else setPage(tab);
 }
-function pageFromHash(){return(location.hash.match(/^#\/(spots|map|logbook)$/)||[])[1]||"spots";}
+function pageFromHash(){return(location.hash.match(/^#\/(spots|data|map|logbook)$/)||[])[1]||"spots";}
 
 /* ===================== Messstellenkarte ===================== */
 let UI_EXPLORER_MAP=null,UI_EXPLORER_STATIONS=null,UI_EXPLORER_ROUTE=null,UI_EXPLORER_SPOTS=null;
