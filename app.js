@@ -7,6 +7,11 @@ window.WQ_DATA = { "updated": "", "items": [] };
 const PEGELONLINE_BASE = "https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/";
 const SELECTION_KEY = "rheincheck_auswahl_v2";
 const FAVORITES_KEY = "rheincheck_favoriten_v1";
+const SPOTS_KEY = "rheincheck_spots_v1";
+const CURRENT_SPOT_KEY = "rheincheck_aktiver_spot_v1";
+const TRIPS_KEY = "rheincheck_trips_v1";
+const TRIP_MIGRATION_KEY = "rheincheck_trip_migration_v1";
+const CATCH_KEY = "rheincheck_faenge_v1";
 const MAINZ_GAUGE_ID = "a37a9aa3-45e9-4d90-9df6-109f3a28a5af";
 const DEFAULT_SPOT = {lat:50.004, lon:8.271, km:498.27, label:"Mainz / Wiesbaden", distanceToRhineKm:0};
 const FALLBACK_CATALOG = {
@@ -23,6 +28,8 @@ const FALLBACK_CATALOG = {
 };
 
 let CATALOG = {gauges:[], qualityStations:[]};
+let SPOTS = [];
+let CURRENT_SPOT_ID = "";
 let APP_SELECTION = {
   spot:Object.assign({},DEFAULT_SPOT),
   gaugeId:MAINZ_GAUGE_ID,
@@ -33,6 +40,7 @@ let APP_SELECTION = {
   manualQuality:false
 };
 let SELECTION_VERSION = 0;
+let DATA_REFRESH_TIMER = null;
 
 const $ = id => document.getElementById(id);
 const fmt = (n,d=0) => (n==null||isNaN(n)) ? "–" : Number(n).toLocaleString("de-DE",{minimumFractionDigits:d,maximumFractionDigits:d});
@@ -102,16 +110,12 @@ function normalizeCatalog(raw){
   };
 }
 
-function loadStoredSelection(){
+function loadLegacySelection(){
   try{
     const saved=JSON.parse(localStorage.getItem(SELECTION_KEY));
-    if(saved&&saved.spot&&num(saved.spot.lat)!=null&&num(saved.spot.lon)!=null){
-      APP_SELECTION=Object.assign({},APP_SELECTION,saved,{spot:Object.assign({},DEFAULT_SPOT,saved.spot,{
-        lat:num(saved.spot.lat),lon:num(saved.spot.lon),
-        km:num(saved.spot.km),distanceToRhineKm:num(saved.spot.distanceToRhineKm)
-      })});
-    }
+    if(saved&&saved.spot&&num(saved.spot.lat)!=null&&num(saved.spot.lon)!=null) return saved;
   }catch(_){}
+  return null;
 }
 function persistSelection(){
   try{ localStorage.setItem(SELECTION_KEY,JSON.stringify(APP_SELECTION)); }catch(_){}
@@ -199,25 +203,17 @@ function resetLiveTiles(){
   if($("quality")) $("quality").innerHTML='<div class="qtile"><div class="lbl">🌡️ Wasserqualität</div><div class="hint">Werte der gewählten Station werden geladen …</div></div>';
 }
 function setFishingSpot(lat,lon,options){
-  cancelMarking();
   APP_SELECTION=resolveSelection(lat,lon,options);
   SELECTION_VERSION++;
   persistSelection();
   clearHistoryCache();
-  updateSelectionUI(!!(options&&options.pan));
+  updateSelectionUI();
   resetLiveTiles();
   loadAll();
 }
-function selectAreaStation(id){
-  const g=byId(CATALOG.gauges,id); if(!g) return;
-  setFishingSpot(g.latitude,g.longitude,{label:"Bei "+stationLabel(g.name),pan:true,source:"station",spotStationId:g.id});
-}
-function useQualityAsSpot(id){
-  const q=byId(CATALOG.qualityStations,id); if(!q) return;
-  setFishingSpot(q.latitude,q.longitude,{label:"Bei "+stationLabel(q.name),pan:true,source:"station"});
-}
 function changeStationOverride(kind,id){
-  cancelMarking();
+  const active=getActiveSpot();
+  if(!active) return;
   const spot=APP_SELECTION.spot;
   const list=kind==="gauge"?CATALOG.gauges:CATALOG.qualityStations;
   const nearest=nearestByRiverKm(list,spot.km,spot);
@@ -225,19 +221,35 @@ function changeStationOverride(kind,id){
   if(kind==="gauge"){
     APP_SELECTION.gaugeId=id||(nearest&&nearest.item.id)||APP_SELECTION.gaugeId;
     APP_SELECTION.manualGauge=!!id;
+    active.gaugeId=APP_SELECTION.gaugeId;
+    active.manualGauge=!!id;
   }else{
     APP_SELECTION.qualityId=id||(nearest&&nearest.item.id)||APP_SELECTION.qualityId;
     APP_SELECTION.manualQuality=!!id;
+    active.qualityId=APP_SELECTION.qualityId;
+    active.manualQuality=!!id;
   }
+  active.updatedAt=new Date().toISOString();
+  saveSpots();
   SELECTION_VERSION++;
-  persistSelection(); clearHistoryCache(); updateSelectionUI(false); resetLiveTiles(); loadAll();
+  persistSelection(); clearHistoryCache(); updateSelectionUI(); renderExplorerMarkers(); resetLiveTiles(); loadAll();
 }
 function overrideGauge(id){ changeStationOverride("gauge",id); }
 function overrideQuality(id){ changeStationOverride("quality",id); }
 function resetToAutomaticStations(){
-  cancelMarking();
+  const active=getActiveSpot();
+  if(!active) return;
   const s=APP_SELECTION.spot;
-  setFishingSpot(s.lat,s.lon,{label:s.label,pan:false,source:APP_SELECTION.spotSource,spotStationId:APP_SELECTION.spotStationId});
+  const resolved=resolveSelection(s.lat,s.lon,{label:active.name,source:"saved"});
+  APP_SELECTION=resolved;
+  active.gaugeId=resolved.gaugeId;
+  active.qualityId=resolved.qualityId;
+  active.manualGauge=false;
+  active.manualQuality=false;
+  active.updatedAt=new Date().toISOString();
+  saveSpots();
+  SELECTION_VERSION++;
+  persistSelection(); clearHistoryCache(); updateSelectionUI(); renderExplorerMarkers(); resetLiveTiles(); loadAll();
 }
 
 // Klassifizierungs-Farbe -> CSS-Farbe für den Kachelstreifen
@@ -508,7 +520,6 @@ async function loadQuality(token){
 }
 
 /* ===================== Fangbuch ===================== */
-const CATCH_KEY = "rheincheck_faenge_v1";
 function loadCatches(){ try{ return JSON.parse(localStorage.getItem(CATCH_KEY)) || []; }catch(e){ return []; } }
 function saveCatches(a){ try{ localStorage.setItem(CATCH_KEY, JSON.stringify(a)); }catch(e){ alert("Speichern fehlgeschlagen (Speicher voll?)."); } }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
@@ -1168,4 +1179,4 @@ async function bootstrap(){
   await loadAll();
   setInterval(loadAll,10*60*1000);
 }
-bootstrap();
+// Der App-Start erfolgt in ui.js, nachdem Spots, Navigation und Logbuch geladen sind.

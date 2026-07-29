@@ -1,233 +1,314 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rhein-Check · Live-Daten für den deutschen Rhein</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="styles.css?v=4">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e14">
+  <title>Rhein-Check · Angelbedingungen am deutschen Rhein</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
-<header>
-  <div class="brand">
-    <div class="logo">🎣</div>
-    <div>
-      <h1>Rhein-Check · Deutscher Rhein</h1>
-      <div class="sub" id="headerSub">Live-Bedingungen für deinen gewählten Angelbereich</div>
-    </div>
-  </div>
-  <div>
-    <div class="updated" id="updated">lädt …</div>
-    <button class="refresh" onclick="loadAll()">↻ Aktualisieren</button>
-  </div>
-</header>
-
-<div class="spotcard">
-  <div class="spothead">
-    <div>
-      <div class="eyebrow">Dein Angelbereich</div>
-      <h2 id="spotTitle">Mainz / Wiesbaden</h2>
-      <div class="spotdetail" id="spotDetail">Rhein-km 498,3 · passende Messstellen werden geladen …</div>
-    </div>
-    <button type="button" class="favbtn" id="favoriteBtn" onclick="toggleFavorite()">☆ Als Favorit speichern</button>
-  </div>
-  <div class="stationcontrols">
-    <label>
-      <span>Angelbereich über Station</span>
-      <select id="areaStationSelect" onchange="selectAreaStation(this.value)" aria-label="Angelbereich über eine Station auswählen">
-        <option value="">Stationen werden geladen …</option>
-      </select>
-    </label>
-    <label>
-      <span>Pegelstation für die Daten</span>
-      <select id="gaugeSelect" onchange="overrideGauge(this.value)" aria-label="Pegelstation für die Daten auswählen">
-        <option value="">Stationen werden geladen …</option>
-      </select>
-    </label>
-    <label>
-      <span>Gütestation für die Daten</span>
-      <select id="qualitySelect" onchange="overrideQuality(this.value)" aria-label="Gütestation für die Daten auswählen">
-        <option value="">Stationen werden geladen …</option>
-      </select>
-    </label>
-    <label>
-      <span>Gespeicherte Angelbereiche</span>
-      <select id="favoriteSelect" onchange="selectFavorite(this.value)" aria-label="Favorisierten Angelbereich auswählen">
-        <option value="">Noch keine Favoriten</option>
-      </select>
-    </label>
-    <button type="button" class="autobtn" onclick="resetToAutomaticStations()">↺ Nächste Stationen verwenden</button>
-  </div>
-  <div class="selectionnote" id="selectionNote">
-    Tippe deinen Angelplatz auf der Karte an – dafür ist keine Standortfreigabe nötig.
-  </div>
-  <div class="mapcard">
-    <div class="mapmeta">
+  <header class="app-header">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">🎣</div>
       <div>
-        <div class="co" id="mapCoords">📍 50.0040° N, 8.2710° O</div>
-        <div class="pos">Gelb: Angelbereich · Blau: Pegel · Türkis: Güte · Grau: derzeit ohne Wert · Grün: gespeicherte Fänge</div>
-      </div>
-      <div class="btns">
-        <button type="button" onclick="copyCoords()" id="copyBtn">Koordinaten kopieren</button>
-        <a class="b" id="spotOsmLink" target="_blank" rel="noopener" href="https://www.openstreetmap.org/?mlat=50.004&mlon=8.271#map=14/50.004/8.271">OpenStreetMap ↗</a>
-        <a class="b" id="spotGoogleLink" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=50.004,8.271">Google Maps ↗</a>
+        <h1>Rhein-Check</h1>
+        <div class="sub" id="headerSub">Deine Angelplätze am deutschen Rhein</div>
       </div>
     </div>
-    <div id="markHint" style="display:none;padding:10px 14px;font-size:13px;background:rgba(56,189,248,.14);color:var(--water);border-bottom:1px solid var(--line)"></div>
-    <div id="map"></div>
-  </div>
-</div>
+    <div class="header-status">
+      <div class="updated" id="updated">Messstellen werden geladen …</div>
+      <button class="icon-button" id="refreshButton" type="button" onclick="loadAll()" aria-label="Daten aktualisieren" title="Daten aktualisieren">↻</button>
+    </div>
+  </header>
 
-<div class="cond" id="cond">
-  <div class="dot lg-amber" id="condDot">…</div>
-  <div>
-    <div class="lvl" id="condLvl">Bedingungen werden ausgewertet …</div>
-    <div class="why" id="condWhy">Pegel, Luftdruck-Tendenz, Wind &amp; Niederschlag werden geladen.</div>
-  </div>
-</div>
-
-<button type="button" class="secttoggle" id="biteBtn" onclick="toggleBite()">🎯 Beißwetter anzeigen</button>
-<div id="biteBox" style="display:none"></div>
-
-<div class="sect" id="riverHeading">Fluss · Pegel Mainz (PEGELONLINE)</div>
-<div class="grid">
-  <div class="tile clickable" id="tilePegel" onclick="openChart('pegel')">
-    <div class="lbl"><span class="ico">📏</span> Pegelstand</div>
-    <div class="val" id="pegelVal">–</div>
-    <svg class="spark" id="pegelSpark" preserveAspectRatio="none" viewBox="0 0 100 34"></svg>
-    <div class="meta" id="pegelMeta">–</div>
-  </div>
-  <div class="tile clickable" onclick="openChart('durchfluss')">
-    <div class="lbl"><span class="ico">🌊</span> Durchfluss</div>
-    <div class="val" id="qVal">–</div>
-    <svg class="spark" id="qSpark" preserveAspectRatio="none" viewBox="0 0 100 34"></svg>
-    <div class="meta" id="qMeta">–</div>
-  </div>
-</div>
-
-<div class="sect" id="weatherHeading">Wetter am Angelbereich (Open-Meteo / DWD)</div>
-<div class="grid">
-  <div class="tile clickable" onclick="openChart('airTemp')">
-    <div class="lbl"><span class="ico">🌡️</span> Lufttemperatur</div>
-    <div class="val" id="airVal">–</div>
-    <div class="meta" id="airMeta">gefühlt –</div>
-  </div>
-  <div class="tile clickable" onclick="openChart('wind')">
-    <div class="lbl"><span class="ico">💨</span> Wind</div>
-    <div class="val" id="windVal">–</div>
-    <div class="meta" id="windMeta">Böen –</div>
-  </div>
-  <div class="tile clickable" onclick="openChart('rain')">
-    <div class="lbl"><span class="ico">🌧️</span> Niederschlag</div>
-    <div class="val" id="rainVal">–</div>
-    <div class="meta" id="rainMeta">heute –</div>
-  </div>
-  <div class="tile clickable" onclick="openChart('press')">
-    <div class="lbl"><span class="ico">📊</span> Luftdruck</div>
-    <div class="val" id="pressVal">–</div>
-    <div class="meta" id="pressMeta">Tendenz –</div>
-  </div>
-  <div class="tile clickable" onclick="openChart('cloud')">
-    <div class="lbl"><span class="ico">🌥️</span> Himmel</div>
-    <div class="val" id="skyVal" style="font-size:22px">–</div>
-    <div class="meta" id="skyMeta">Bewölkung – · Feuchte –</div>
-  </div>
-  <div class="tile">
-    <div class="lbl"><span class="ico">🌅</span> Sonne</div>
-    <div class="val" id="sunVal" style="font-size:20px">–</div>
-    <div class="meta" id="sunMeta">Auf – · Unter –</div>
-  </div>
-</div>
-
-<div class="sect" id="qualityHeading">Wasserqualität · Messstation Mainz-Wiesbaden</div>
-<div class="grid" id="quality"></div>
-<div id="qStamp" style="font-size:11.5px;color:var(--muted2);margin:9px 4px 0">
-  Die amtlichen Werte werden automatisch aktualisiert.
-</div>
-
-<button type="button" class="secttoggle" id="fangbuchBtn" onclick="toggleFangbuch()">📒 Fangbuch anzeigen</button>
-<div id="fangbuchBox" style="display:none">
-<div class="sect" style="margin-top:10px">Neuen Fang eintragen</div>
-<div class="fbcard">
-  <div class="fbrow">
-    <div class="fbfield"><label>Fischart</label><input id="f_art" list="artliste" placeholder="z. B. Hecht"></div>
-    <div class="fbfield"><label>Größe (cm)</label><input id="f_groesse" type="number" min="0" step="1" inputmode="numeric"></div>
-    <div class="fbfield"><label>Gewicht (g, optional)</label><input id="f_gewicht" type="number" min="0" step="10" inputmode="numeric"></div>
-  </div>
-  <div class="fbrow">
-    <div class="fbfield"><label>Köder</label><input id="f_koeder" placeholder="z. B. Gummifisch 12 cm"></div>
-    <div class="fbfield"><label>Methode</label><input id="f_methode" list="methodeliste" placeholder="z. B. Spinnfischen"></div>
-    <div class="fbfield"><label>Gewässer</label><input id="f_gewaesser" value="Rhein"></div>
-  </div>
-  <div class="fbrow">
-    <div class="fbfield"><label>Datum</label><input id="f_datum" type="date"></div>
-    <div class="fbfield"><label>Uhrzeit</label><input id="f_zeit" type="time"></div>
-  </div>
-  <div class="fbrow">
-    <div class="fbfield fbwide"><label>Standort</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button type="button" class="fbbtn" id="gpsBtn" onclick="captureGps()" style="flex:1;min-width:150px">📍 Handy-Standort</button>
-        <button type="button" class="fbbtn" onclick="markOnMap()" style="flex:1;min-width:150px">🗺️ Auf Karte markieren</button>
+  <main class="app-main">
+    <section class="app-page active" id="page-spots" data-page="spots" aria-labelledby="spotsPageTitle">
+      <div class="page-heading">
+        <div>
+          <div class="eyebrow">Meine Angelplätze</div>
+          <h2 id="spotsPageTitle">Bedingungen am Spot</h2>
+          <p>Speichere Angelplätze unabhängig von deinem aktuellen Standort.</p>
+        </div>
+        <button class="primary compact" type="button" onclick="openSpotEditor()">＋ Angelplatz hinzufügen</button>
       </div>
+
+      <div class="empty-state" id="spotsEmpty">
+        <div class="empty-icon" aria-hidden="true">📍</div>
+        <h3>Noch kein Angelplatz gespeichert</h3>
+        <p>Wähle deinen Platz erst dann auf der Karte aus, wenn du ihn hinzufügen möchtest. Eine Standortfreigabe ist nicht nötig.</p>
+        <button class="primary" type="button" onclick="openSpotEditor()">Angelplatz hinzufügen</button>
+      </div>
+
+      <div id="spotContent" hidden>
+        <div class="spot-switcher">
+          <label class="field grow">
+            <span>Angelplatz</span>
+            <select id="spotSelect" onchange="activateSpot(this.value)"></select>
+          </label>
+          <button class="secondary" type="button" onclick="editActiveSpot()">Bearbeiten</button>
+          <button class="danger-quiet" type="button" onclick="deleteActiveSpot()">Löschen</button>
+        </div>
+
+        <article class="spot-summary">
+          <div>
+            <div class="eyebrow">Aktiver Angelplatz</div>
+            <h2 id="spotTitle">–</h2>
+            <div class="spotdetail" id="spotDetail">–</div>
+          </div>
+          <div class="spot-links">
+            <a id="spotOsmLink" target="_blank" rel="noopener">OpenStreetMap ↗</a>
+            <a id="spotGoogleLink" target="_blank" rel="noopener">Google Maps ↗</a>
+          </div>
+        </article>
+
+        <div class="source-card">
+          <div class="source-card-head">
+            <div>
+              <h3>Datenquellen für diesen Spot</h3>
+              <p>Pegel und Wasserqualität werden automatisch entlang des Rheins zugeordnet. Du kannst beide Stationen getrennt korrigieren.</p>
+            </div>
+            <span class="river-chip">Gewässer: Rhein</span>
+          </div>
+          <div class="station-controls">
+            <label class="field">
+              <span>Pegelstation</span>
+              <select id="gaugeSelect" onchange="overrideGauge(this.value)"></select>
+            </label>
+            <label class="field">
+              <span>Gütestation</span>
+              <select id="qualitySelect" onchange="overrideQuality(this.value)"></select>
+            </label>
+            <button class="secondary" type="button" onclick="resetToAutomaticStations()">Automatisch zuordnen</button>
+          </div>
+          <div class="selectionnote" id="selectionNote">–</div>
+        </div>
+
+        <div class="cond" id="cond">
+          <div class="dot lg-amber" id="condDot">…</div>
+          <div>
+            <div class="lvl" id="condLvl">Bedingungen werden ausgewertet …</div>
+            <div class="why" id="condWhy">Wasser- und Wetterdaten werden geladen.</div>
+          </div>
+        </div>
+
+        <div class="section-title" id="riverHeading">Wasser · Pegel</div>
+        <div class="grid">
+          <div class="tile clickable" id="tilePegel" onclick="openChart('pegel')">
+            <div class="lbl"><span class="ico">📏</span> Pegelstand</div>
+            <div class="val" id="pegelVal">–</div>
+            <svg class="spark" id="pegelSpark" preserveAspectRatio="none" viewBox="0 0 100 34"></svg>
+            <div class="meta" id="pegelMeta">–</div>
+          </div>
+          <div class="tile clickable" onclick="openChart('durchfluss')">
+            <div class="lbl"><span class="ico">🌊</span> Durchfluss</div>
+            <div class="val" id="qVal">–</div>
+            <svg class="spark" id="qSpark" preserveAspectRatio="none" viewBox="0 0 100 34"></svg>
+            <div class="meta" id="qMeta">–</div>
+          </div>
+        </div>
+
+        <div class="section-title" id="qualityHeading">Wasserqualität</div>
+        <div class="grid" id="quality"></div>
+        <div class="data-stamp" id="qStamp">Die amtlichen Werte werden automatisch aktualisiert.</div>
+
+        <button type="button" class="section-toggle" id="biteBtn" onclick="toggleBite()">🎯 Einschätzung nach Fischart anzeigen</button>
+        <div id="biteBox" hidden></div>
+
+        <div class="section-title" id="weatherHeading">Wetter am Angelplatz</div>
+        <div class="grid">
+          <div class="tile clickable" onclick="openChart('airTemp')">
+            <div class="lbl"><span class="ico">🌡️</span> Lufttemperatur</div>
+            <div class="val" id="airVal">–</div>
+            <div class="meta" id="airMeta">gefühlt –</div>
+          </div>
+          <div class="tile clickable" onclick="openChart('wind')">
+            <div class="lbl"><span class="ico">💨</span> Wind</div>
+            <div class="val" id="windVal">–</div>
+            <div class="meta" id="windMeta">Böen –</div>
+          </div>
+          <div class="tile clickable" onclick="openChart('rain')">
+            <div class="lbl"><span class="ico">🌧️</span> Niederschlag</div>
+            <div class="val" id="rainVal">–</div>
+            <div class="meta" id="rainMeta">heute –</div>
+          </div>
+          <div class="tile clickable" onclick="openChart('press')">
+            <div class="lbl"><span class="ico">📊</span> Luftdruck</div>
+            <div class="val" id="pressVal">–</div>
+            <div class="meta" id="pressMeta">Tendenz –</div>
+          </div>
+          <div class="tile clickable" onclick="openChart('cloud')">
+            <div class="lbl"><span class="ico">🌥️</span> Himmel</div>
+            <div class="val smaller" id="skyVal">–</div>
+            <div class="meta" id="skyMeta">Bewölkung – · Feuchte –</div>
+          </div>
+          <div class="tile">
+            <div class="lbl"><span class="ico">🌅</span> Sonne</div>
+            <div class="val smaller" id="sunVal">–</div>
+            <div class="meta" id="sunMeta">Auf – · Unter –</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="app-page" id="page-map" data-page="map" aria-labelledby="mapPageTitle" hidden>
+      <div class="page-heading">
+        <div>
+          <div class="eyebrow">Messstellennetz</div>
+          <h2 id="mapPageTitle">Karte des deutschen Rheins</h2>
+          <p>Tippe eine Messstation an, um ihren aktuellen Datenstand zu sehen.</p>
+        </div>
+      </div>
+      <div class="map-layout">
+        <div class="map-card station-map-card">
+          <div class="map-toolbar">
+            <label><input id="filterGauges" type="checkbox" checked onchange="renderExplorerMarkers()"> <span class="legend-dot gauge"></span> Pegel</label>
+            <label><input id="filterQuality" type="checkbox" checked onchange="renderExplorerMarkers()"> <span class="legend-dot quality"></span> Wasserqualität</label>
+            <label><input id="filterSpots" type="checkbox" checked onchange="renderExplorerMarkers()"> <span class="legend-dot spot"></span> Meine Spots</label>
+          </div>
+          <div id="stationMap" aria-label="Karte mit Messstationen am deutschen Rhein"></div>
+        </div>
+        <aside class="station-detail" id="stationDetail">
+          <div class="empty-detail">
+            <div class="empty-icon small" aria-hidden="true">🗺️</div>
+            <h3>Messstation auswählen</h3>
+            <p>Blaue Punkte zeigen Pegelstationen, türkise Punkte Messstellen für Wasserqualität.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="app-page" id="page-logbook" data-page="logbook" aria-labelledby="logbookPageTitle" hidden>
+      <div class="page-heading">
+        <div>
+          <div class="eyebrow">Angeltrip dokumentieren</div>
+          <h2 id="logbookPageTitle">Logbuch</h2>
+          <p>Zeiten, Spot, Fänge und Notizen bleiben lokal in diesem Browser.</p>
+        </div>
+        <button class="primary compact" type="button" id="newTripButton" onclick="openStartTripDialog()">Trip starten</button>
+      </div>
+
+      <div id="activeTripCard"></div>
+
+      <div class="empty-state compact-empty" id="logbookEmpty">
+        <div class="empty-icon" aria-hidden="true">📖</div>
+        <h3>Noch kein Trip im Logbuch</h3>
+        <p>Starte am gewählten Spot einen Trip. Fänge kannst du währenddessen mit genauer Uhrzeit ergänzen.</p>
+        <button class="primary" type="button" onclick="openStartTripDialog()">Ersten Trip starten</button>
+      </div>
+
+      <div id="tripHistory"></div>
+      <div class="logbook-tools" id="logbookTools" hidden>
+        <button class="secondary" type="button" onclick="exportTrips()">Logbuch als JSON sichern</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <strong>Datenquellen:</strong> PEGELONLINE (WSV), Open-Meteo (DWD) und amtliche Landesmessnetze.
+    Ungeprüfte Rohdaten ohne Gewähr. Die Einschätzung ist eine Faustregel, keine Fangprognose.
+  </footer>
+
+  <div class="active-trip-dock" id="activeTripDock" hidden></div>
+
+  <nav class="bottom-nav" aria-label="Hauptnavigation">
+    <button type="button" class="nav-item active" data-tab="spots" onclick="navigateTo('spots')">
+      <span class="nav-icon" aria-hidden="true">📍</span><span>Spots</span>
+    </button>
+    <button type="button" class="nav-item" data-tab="map" onclick="navigateTo('map')">
+      <span class="nav-icon" aria-hidden="true">🗺️</span><span>Karte</span>
+    </button>
+    <button type="button" class="nav-item" data-tab="logbook" onclick="navigateTo('logbook')">
+      <span class="nav-icon" aria-hidden="true">📖</span><span>Logbuch</span>
+    </button>
+  </nav>
+
+  <dialog class="sheet-dialog" id="spotDialog">
+    <form method="dialog" class="sheet" onsubmit="return false">
+      <div class="sheet-head">
+        <div>
+          <div class="eyebrow">Angelplatz</div>
+          <h2 id="spotDialogTitle">Angelplatz hinzufügen</h2>
+        </div>
+        <button class="close-button" type="button" onclick="closeDialog('spotDialog')" aria-label="Schließen">✕</button>
+      </div>
+      <p class="sheet-intro">Tippe den Angelplatz auf der Karte an, gib ihm einen Namen und prüfe die automatisch vorgeschlagenen Rhein-Messstellen.</p>
+      <div class="editor-grid">
+        <div class="map-card editor-map-card">
+          <div class="map-toolbar editor-meta">
+            <span id="mapCoords">Noch keinen Punkt gewählt</span>
+            <span>Gelb: Angelplatz · Blau: Pegel · Türkis: Güte</span>
+          </div>
+          <div id="spotEditorMap" aria-label="Karte zum Auswählen des Angelplatzes"></div>
+        </div>
+        <div class="editor-fields">
+          <label class="field">
+            <span>Name des Angelplatzes</span>
+            <input id="spotNameInput" maxlength="80" placeholder="z. B. Buhnenfeld Eltville" autocomplete="off">
+          </label>
+          <div class="river-lock"><span>Gewässer</span><strong>Rhein</strong><small>So kann keine näher gelegene Station eines anderen Flusses gewählt werden.</small></div>
+          <label class="field">
+            <span>Pegelstation</span>
+            <select id="spotGaugeInput"></select>
+          </label>
+          <label class="field">
+            <span>Gütestation</span>
+            <select id="spotQualityInput"></select>
+          </label>
+          <div class="selectionnote" id="spotEditorNote">Wähle einen Punkt auf der Karte.</div>
+          <div class="dialog-actions">
+            <button class="secondary" type="button" onclick="closeDialog('spotDialog')">Abbrechen</button>
+            <button class="primary" type="button" onclick="saveSpotFromEditor()">Angelplatz speichern</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet-dialog narrow" id="tripDialog">
+    <form method="dialog" class="sheet" onsubmit="return false">
+      <div class="sheet-head">
+        <div><div class="eyebrow">Logbuch</div><h2 id="tripDialogTitle">Trip starten</h2></div>
+        <button class="close-button" type="button" onclick="closeDialog('tripDialog')" aria-label="Schließen">✕</button>
+      </div>
+      <div id="tripDialogBody"></div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet-dialog narrow" id="catchDialog">
+    <form method="dialog" class="sheet" onsubmit="return false">
+      <div class="sheet-head">
+        <div><div class="eyebrow">Fang</div><h2>Fang hinzufügen</h2></div>
+        <button class="close-button" type="button" onclick="closeDialog('catchDialog')" aria-label="Schließen">✕</button>
+      </div>
+      <div id="catchDialogBody"></div>
+    </form>
+  </dialog>
+
+  <datalist id="artliste">
+    <option>Hecht</option><option>Zander</option><option>Barsch</option><option>Rapfen</option>
+    <option>Wels</option><option>Aal</option><option>Karpfen</option><option>Brasse</option>
+    <option>Rotauge</option><option>Döbel</option><option>Barbe</option><option>Nase</option>
+    <option>Forelle</option><option>Schleie</option><option>Güster</option><option>Kaulbarsch</option>
+  </datalist>
+  <datalist id="methodeliste">
+    <option>Spinnfischen</option><option>Grundangeln</option><option>Posenangeln</option>
+    <option>Feedern</option><option>Fliegenfischen</option><option>Ansitz</option>
+  </datalist>
+
+  <div id="chartModal" class="chart-modal" hidden onclick="if(event.target===this)closeChart()">
+    <div class="chart-box">
+      <div class="chart-head"><span id="cmTitle"></span><button class="close-button" onclick="closeChart()" aria-label="Schließen">✕</button></div>
+      <div class="chart-tabs"><button id="cmt24" onclick="setChartRange('24h')">24 Stunden</button><button id="cmt7" onclick="setChartRange('7d')">7 Tage</button></div>
+      <div class="chart-canvas"><canvas id="cmChart"></canvas></div>
+      <div id="cmMeta" class="muted-note"></div>
     </div>
   </div>
-  <div class="fbrow">
-    <div class="fbfield fbwide"><label>Notiz</label><input id="f_notiz" placeholder="Beobachtungen, Stelle, Uhrzeit des Bisses …"></div>
-  </div>
-  <div id="gpsInfo" class="fbnote">Kein Standort gewählt – nutze die Handy-Ortung oder „Auf Karte markieren".</div>
-  <div class="fbactions">
-    <button type="button" class="fbsave" id="fbSaveBtn" onclick="saveCatch()">🎣 Fang speichern</button>
-    <span class="fbnote">Wetter, Wasserwerte &amp; Mondphase werden automatisch mitgespeichert.</span>
-  </div>
-</div>
 
-<datalist id="artliste">
-  <option>Hecht</option><option>Zander</option><option>Barsch</option><option>Rapfen</option>
-  <option>Wels</option><option>Aal</option><option>Karpfen</option><option>Brasse</option>
-  <option>Rotauge</option><option>Döbel</option><option>Barbe</option><option>Nase</option>
-  <option>Forelle</option><option>Schleie</option><option>Güster</option><option>Kaulbarsch</option>
-</datalist>
-<datalist id="methodeliste">
-  <option>Spinnfischen</option><option>Grundangeln</option><option>Posenangeln</option>
-  <option>Feedern</option><option>Fliegenfischen</option><option>Ansitz</option>
-</datalist>
-
-<div class="fbtoolbar">
-  <span id="fbCount" class="fbnote">0 Fänge gespeichert</span>
-  <div class="fbtools">
-    <button type="button" class="fbtool" id="listBtn" onclick="toggleList()">Fänge anzeigen</button>
-    <button type="button" class="fbtool" id="tblBtn" onclick="toggleTable()">📋 Tabelle anzeigen</button>
-    <button type="button" class="fbtool" onclick="exportJSON()">⬇ JSON</button>
-    <button type="button" class="fbtool" onclick="exportCSV()">⬇ CSV</button>
-    <button type="button" class="fbtool" onclick="document.getElementById('importFile').click()">⬆ Import</button>
-    <input type="file" id="importFile" accept="application/json,.json" style="display:none" onchange="importJSON(event)">
-  </div>
-</div>
-<div id="fbTable" style="display:none"></div>
-<div id="fbList" style="display:none"></div>
-</div>
-
-<footer>
-  <div><strong>Datenquellen:</strong>
-    Pegel &amp; Durchfluss: <a href="https://pegelonline.wsv.de" target="_blank" rel="noopener">PEGELONLINE (WSV)</a> ·
-    Wetter: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo (DWD)</a> ·
-    Wasserqualität: amtliche Landesmessnetze von Baden-Württemberg, Rheinland-Pfalz und Nordrhein-Westfalen; die konkrete Quelle steht an der gewählten Station.
-  </div>
-  <div style="margin-top:6px">Ungeprüfte Rohdaten – ohne Gewähr für Aktualität, Richtigkeit und Vollständigkeit. Die Angel-Ampel ist eine grobe Faustregel, keine Fangprognose. Petri Heil!</div>
-  <div style="margin-top:6px">Dein Fangbuch wird nur lokal in diesem Browser gespeichert – nichts wird hochgeladen. Für ein Backup oder eine spätere Auswertung nutze den Export als JSON oder CSV.</div>
-</footer>
-
-<div id="chartModal" class="cmodal" style="display:none" onclick="if(event.target===this)closeChart()">
-  <div class="cmbox">
-    <div class="cmhead"><span id="cmTitle"></span><button class="cmx" onclick="closeChart()" aria-label="Schließen">✕</button></div>
-    <div class="cmtabs"><button id="cmt24" onclick="setChartRange('24h')">24 Stunden</button><button id="cmt7" onclick="setChartRange('7d')">7 Tage</button></div>
-    <div class="cmcanvas"><canvas id="cmChart"></canvas></div>
-    <div id="cmMeta" class="fbnote"></div>
-  </div>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="app.js?v=4"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="app.js?v=5"></script>
+  <script src="ui.js?v=5"></script>
 </body>
 </html>
