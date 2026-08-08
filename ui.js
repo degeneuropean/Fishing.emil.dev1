@@ -393,13 +393,75 @@ function openSpotEditorAtStation(type,id){
 
 /* ===================== Trip-Logbuch ===================== */
 let UI_TRIPS=[],UI_TRIP_CLOCK_TIMER=null;
+let UI_PHOTO_DB_PROMISE=null,UI_QUICK_PHOTO_BLOB=null,UI_QUICK_PHOTO_URL="",UI_QUICK_SAVE_PENDING=false;
+let UI_CATCH_PHOTO_URLS=[];
+const QUICK_PHOTO_DB="rheincheck_fangfotos_v1",QUICK_PHOTO_STORE="photos";
+
+function openCatchPhotoDb(){
+  if(UI_PHOTO_DB_PROMISE)return UI_PHOTO_DB_PROMISE;
+  UI_PHOTO_DB_PROMISE=new Promise((resolve,reject)=>{
+    if(!window.indexedDB){reject(new Error("Bildspeicher nicht verfügbar"));return;}
+    const request=indexedDB.open(QUICK_PHOTO_DB,1);
+    request.onupgradeneeded=()=>{
+      const db=request.result;
+      if(!db.objectStoreNames.contains(QUICK_PHOTO_STORE))db.createObjectStore(QUICK_PHOTO_STORE);
+    };
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error||new Error("Bildspeicher konnte nicht geöffnet werden"));
+    request.onblocked=()=>reject(new Error("Bildspeicher ist blockiert"));
+  });
+  return UI_PHOTO_DB_PROMISE;
+}
+async function putCatchPhoto(id,blob){
+  const db=await openCatchPhotoDb();
+  return new Promise((resolve,reject)=>{
+    const transaction=db.transaction(QUICK_PHOTO_STORE,"readwrite");
+    transaction.objectStore(QUICK_PHOTO_STORE).put({blob,createdAt:new Date().toISOString()},id);
+    transaction.oncomplete=()=>resolve(true);
+    transaction.onerror=()=>reject(transaction.error||new Error("Foto konnte nicht gespeichert werden"));
+    transaction.onabort=()=>reject(transaction.error||new Error("Foto konnte nicht gespeichert werden"));
+  });
+}
+async function getCatchPhoto(id){
+  const db=await openCatchPhotoDb();
+  return new Promise((resolve,reject)=>{
+    const request=db.transaction(QUICK_PHOTO_STORE,"readonly").objectStore(QUICK_PHOTO_STORE).get(id);
+    request.onsuccess=()=>resolve(request.result?.blob||request.result||null);
+    request.onerror=()=>reject(request.error||new Error("Foto konnte nicht geladen werden"));
+  });
+}
+async function deleteCatchPhoto(id){
+  if(!id)return;
+  try{
+    const db=await openCatchPhotoDb();
+    await new Promise((resolve,reject)=>{
+      const transaction=db.transaction(QUICK_PHOTO_STORE,"readwrite");
+      transaction.objectStore(QUICK_PHOTO_STORE).delete(id);
+      transaction.oncomplete=resolve;
+      transaction.onerror=()=>reject(transaction.error);
+      transaction.onabort=()=>reject(transaction.error);
+    });
+  }catch(_){}
+}
+function clearCatchPhotoUrls(){
+  UI_CATCH_PHOTO_URLS.forEach(url=>URL.revokeObjectURL(url));UI_CATCH_PHOTO_URLS=[];
+}
+function hydrateCatchPhotos(){
+  document.querySelectorAll("img[data-catch-photo]").forEach(image=>{
+    const id=image.dataset.catchPhoto;if(!id)return;
+    getCatchPhoto(id).then(blob=>{
+      if(!blob||!document.contains(image)){image.hidden=true;return;}
+      const url=URL.createObjectURL(blob);UI_CATCH_PHOTO_URLS.push(url);image.src=url;
+    }).catch(()=>{image.hidden=true;});
+  });
+}
 function loadTrips(){
   UI_TRIPS=readArray(TRIPS_KEY).filter(t=>t&&t.id&&t.startAt).map(t=>
     Object.assign({status:t.endAt?"completed":"active",catches:[]},t,{catches:Array.isArray(t.catches)?t.catches:[]})
   );
   migrateLegacyCatches();
 }
-function saveTrips(){writeArray(TRIPS_KEY,UI_TRIPS);}
+function saveTrips(){return writeArray(TRIPS_KEY,UI_TRIPS);}
 function legacyCatchDate(c){
   const date=localDateTime(c.datum,c.uhrzeit||"12:00");
   if(date)return date;
@@ -559,15 +621,134 @@ function saveTripCatch(){
   });
   saveTrips();closeDialog("catchDialog");renderLogbook();
 }
+
+function resetQuickCatchPhoto(){
+  UI_QUICK_PHOTO_BLOB=null;UI_QUICK_SAVE_PENDING=false;
+  if(UI_QUICK_PHOTO_URL){URL.revokeObjectURL(UI_QUICK_PHOTO_URL);UI_QUICK_PHOTO_URL="";}
+  const camera=$("quickCameraInput"),upload=$("quickUploadInput");
+  if(camera)camera.value="";if(upload)upload.value="";
+}
+function renderQuickPhotoStep(message){
+  $("quickCatchBody").innerHTML='<div class="quick-photo-stage"><i class="bi bi-camera" aria-hidden="true"></i>'+
+    '<h3>Foto des Fangs</h3><p>'+(message?esc(message):"Die Rückkamera wird automatisch geöffnet. Du kannst alternativ ein vorhandenes Bild auswählen.")+'</p></div>'+
+    '<div class="quick-photo-actions"><button class="primary" type="button" onclick="openQuickCatchCamera()"><i class="bi bi-camera"></i> Foto aufnehmen</button>'+
+    '<button class="secondary" type="button" onclick="openQuickCatchUpload()"><i class="bi bi-image"></i> Bild hochladen</button></div>';
+}
+function openQuickCatch(){
+  resetQuickCatchPhoto();renderQuickPhotoStep();
+  const dialog=$("quickCatchDialog");if(!dialog.open)dialog.showModal();
+  openQuickCatchCamera();
+}
+function closeQuickCatchDialog(){
+  const dialog=$("quickCatchDialog");if(dialog?.open)dialog.close();
+  resetQuickCatchPhoto();
+}
+function openQuickCatchCamera(){
+  const input=$("quickCameraInput");if(!input)return;input.value="";input.click();
+}
+function openQuickCatchUpload(){
+  const input=$("quickUploadInput");if(!input)return;input.value="";input.click();
+}
+async function prepareCatchPhoto(file){
+  if(!file)throw new Error("Kein Bild ausgewählt.");
+  if(file.type&&!file.type.startsWith("image/"))throw new Error("Bitte wähle eine Bilddatei aus.");
+  if(file.size>30*1024*1024)throw new Error("Das Bild ist zu groß. Bitte wähle ein Foto unter 30 MB.");
+  const sourceUrl=URL.createObjectURL(file);
+  try{
+    const image=new Image();image.decoding="async";
+    await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error("Das Bild konnte nicht gelesen werden."));image.src=sourceUrl;});
+    const maxSide=1600,scale=Math.min(1,maxSide/Math.max(image.naturalWidth,image.naturalHeight));
+    const canvas=document.createElement("canvas");
+    canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+    const context=canvas.getContext("2d");if(!context)throw new Error("Das Bild konnte nicht vorbereitet werden.");
+    context.fillStyle="#ffffff";context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(image,0,0,canvas.width,canvas.height);
+    return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Das Bild konnte nicht gespeichert werden.")),"image/jpeg",.82));
+  }finally{URL.revokeObjectURL(sourceUrl);}
+}
+async function handleQuickCatchPhoto(event){
+  const input=event.currentTarget||event.target,file=input.files?.[0];if(!file)return;
+  renderQuickPhotoStep("Foto wird vorbereitet …");
+  try{
+    UI_QUICK_PHOTO_BLOB=await prepareCatchPhoto(file);
+    if(UI_QUICK_PHOTO_URL)URL.revokeObjectURL(UI_QUICK_PHOTO_URL);
+    UI_QUICK_PHOTO_URL=URL.createObjectURL(UI_QUICK_PHOTO_BLOB);
+    renderQuickCatchForm(file.name);
+  }catch(error){
+    UI_QUICK_PHOTO_BLOB=null;renderQuickPhotoStep(error?.message||"Das Foto konnte nicht verarbeitet werden.");
+  }finally{input.value="";}
+}
+function renderQuickCatchForm(photoName){
+  const now=new Date(),active=getActiveSpot();
+  const spotOptions='<option value="">Kein gespeicherter Angelplatz</option>'+SPOTS.map(spot=>
+    '<option value="'+esc(spot.id)+'" '+(spot.id===active?.id?"selected":"")+'>'+esc(spot.name)+'</option>'
+  ).join("");
+  $("quickCatchBody").innerHTML='<img class="quick-photo-preview" src="'+esc(UI_QUICK_PHOTO_URL)+'" alt="Ausgewähltes Fangfoto">'+
+    '<div class="quick-photo-change"><button class="secondary" type="button" onclick="openQuickCatchCamera()"><i class="bi bi-camera"></i> Neu aufnehmen</button>'+
+    '<button class="secondary" type="button" onclick="openQuickCatchUpload()"><i class="bi bi-image"></i> Anderes Bild</button></div>'+
+    '<div class="form-grid"><label class="field wide"><span>Fischart</span><input id="quickSpeciesInput" list="artliste" placeholder="z. B. Zander" autocomplete="off"></label>'+
+    '<label class="field"><span>Größe (cm)</span><input id="quickLengthInput" type="number" min="0" step="1" inputmode="decimal"></label>'+
+    '<label class="field"><span>Gewicht (g), optional</span><input id="quickWeightInput" type="number" min="0" step="10" inputmode="decimal"></label>'+
+    '<label class="field"><span>Köder</span><input id="quickBaitInput" placeholder="z. B. Gummifisch 12 cm"></label>'+
+    '<label class="field"><span>Methode</span><input id="quickMethodInput" list="methodeliste" placeholder="z. B. Spinnfischen"></label>'+
+    '<label class="field"><span>Verbleib</span><select id="quickDispositionInput"><option value="">Nicht angegeben</option><option value="released">Zurückgesetzt</option><option value="kept">Entnommen</option></select></label>'+
+    '<label class="field wide"><span>Angelplatz</span><select id="quickSpotInput">'+spotOptions+'</select></label>'+
+    '<label class="field wide"><span>Ort oder Gewässer, optional</span><input id="quickLocationInput" placeholder="Falls kein gespeicherter Angelplatz passt"></label>'+
+    '<label class="field wide"><span>Datum</span><input id="quickDateInput" type="date" value="'+dateInputValue(now)+'"></label>'+
+    '<label class="field wide"><span>Notiz, optional</span><textarea id="quickNotesInput" placeholder="Biss, Tiefe, Besonderheiten …"></textarea></label></div>'+
+    '<div class="wheel-label">Fangzeit</div>'+renderTimeWheel("quickTimeWheel",timeInputValue(now))+
+    '<div class="quick-photo-note">Das Foto und die Fangdaten bleiben lokal auf diesem Gerät.</div>'+
+    '<div class="form-error" id="quickFormError"></div><div class="dialog-actions"><button class="secondary" type="button" onclick="closeQuickCatchDialog()">Abbrechen</button>'+
+    '<button class="primary" id="quickSaveButton" type="button" onclick="saveQuickCatch()">Fang speichern</button></div>';
+  initTimeWheel("quickTimeWheel",timeInputValue(now));setTimeout(()=>$('quickSpeciesInput')?.focus(),100);
+}
+async function saveQuickCatch(){
+  if(UI_QUICK_SAVE_PENDING)return;
+  const species=$("quickSpeciesInput")?.value.trim(),when=localDateTime($("quickDateInput")?.value,wheelValue("quickTimeWheel"));
+  const error=$("quickFormError");
+  if(!UI_QUICK_PHOTO_BLOB){error.textContent="Bitte nimm zuerst ein Foto auf oder wähle ein Bild aus.";return;}
+  if(!species||!when){error.textContent="Bitte Fischart, Datum und Fangzeit eintragen.";return;}
+  if(when.getTime()>Date.now()+5*60000){error.textContent="Die Fangzeit darf nicht in der Zukunft liegen.";return;}
+  const spot=SPOTS.find(item=>item.id===$("quickSpotInput").value)||null;
+  const location=$("quickLocationInput").value.trim()||spot?.name||"Ohne Ortsangabe";
+  const catchId=newId("catch"),entryId=newId("quick-catch"),moon=moonPhase(when);
+  const catchRecord={
+    id:catchId,timeAt:when.toISOString(),species,lengthCm:num($("quickLengthInput").value),weightG:num($("quickWeightInput").value),
+    bait:$("quickBaitInput").value.trim(),method:$("quickMethodInput").value.trim(),disposition:$("quickDispositionInput").value,
+    notes:$("quickNotesInput").value.trim(),photoId:catchId,photoName:"Fangfoto.jpg",standalone:true,
+    moon:{name:moon.name,ageDays:moon.age,illuminationPct:moon.illum},conditions:spot?.id===CURRENT_SPOT_ID?conditionsSnapshot():null
+  };
+  const spotSnapshot=spot?{id:spot.id,name:spot.name,riverName:"Rhein",lat:spot.lat,lon:spot.lon,km:spot.km}:
+    {id:"",name:location,riverName:"",lat:null,lon:null,km:null};
+  const entry={
+    id:entryId,kind:"quick-catch",quickCatch:true,spotId:spot?.id||"",spotSnapshot,
+    startAt:when.toISOString(),endAt:when.toISOString(),status:"completed",method:catchRecord.method,
+    notes:"",catches:[catchRecord],createdAt:new Date().toISOString(),conditionsStart:catchRecord.conditions
+  };
+  UI_QUICK_SAVE_PENDING=true;error.textContent="";
+  const button=$("quickSaveButton");button.disabled=true;button.innerHTML='<span class="quick-save-progress"><i class="bi bi-arrow-repeat"></i> Wird gespeichert</span>';
+  try{
+    await putCatchPhoto(catchId,UI_QUICK_PHOTO_BLOB);UI_TRIPS.push(entry);
+    if(!saveTrips()){UI_TRIPS=UI_TRIPS.filter(item=>item.id!==entryId);await deleteCatchPhoto(catchId);throw new Error("Die Fangdaten konnten nicht gespeichert werden.");}
+    closeQuickCatchDialog();renderLogbook();navigateTo("logbook");
+  }catch(saveError){
+    UI_QUICK_SAVE_PENDING=false;
+    if($("quickFormError"))$("quickFormError").textContent=saveError?.message||"Der Fang konnte nicht gespeichert werden.";
+    if($("quickSaveButton")){$("quickSaveButton").disabled=false;$("quickSaveButton").textContent="Fang speichern";}
+  }
+}
+
 function deleteTrip(id){
   const trip=UI_TRIPS.find(t=>t.id===id);
-  if(!trip||trip.status==="active"||!confirm("Diesen abgeschlossenen Trip löschen?"))return;
-  UI_TRIPS=UI_TRIPS.filter(t=>t.id!==id);saveTrips();renderLogbook();
+  if(!trip||trip.status==="active"||!confirm(trip.quickCatch?"Diesen Fang löschen?":"Diesen abgeschlossenen Trip löschen?"))return;
+  const photoIds=trip.catches.map(c=>c.photoId).filter(Boolean);
+  UI_TRIPS=UI_TRIPS.filter(t=>t.id!==id);saveTrips();photoIds.forEach(deleteCatchPhoto);renderLogbook();
 }
 function deleteTripCatch(tripId,catchId){
   const trip=UI_TRIPS.find(t=>t.id===tripId);
-  if(!trip||!confirm("Diesen Fang aus dem Trip löschen?"))return;
-  trip.catches=trip.catches.filter(c=>c.id!==catchId);saveTrips();renderLogbook();
+  if(!trip||!confirm(trip.quickCatch?"Diesen Fang löschen?":"Diesen Fang aus dem Trip löschen?"))return;
+  if(trip.quickCatch)UI_TRIPS=UI_TRIPS.filter(t=>t.id!==tripId);
+  else trip.catches=trip.catches.filter(c=>c.id!==catchId);
+  saveTrips();deleteCatchPhoto(catchId);renderLogbook();
 }
 function formatDuration(start,end){
   const minutes=Math.max(0,Math.floor((new Date(end||Date.now())-new Date(start))/60000));
@@ -578,7 +759,8 @@ function dispositionLabel(value){return value==="released"?"zurückgesetzt":valu
 function renderCatchRows(trip){
   if(!trip.catches.length)return '<div class="trip-notes">Keine Fänge dokumentiert.</div>';
   return trip.catches.slice().sort((a,b)=>new Date(a.timeAt)-new Date(b.timeAt)).map(c=>
-    '<div class="catch-row"><strong>'+esc(c.species)+(c.lengthCm!=null?" · "+fmt(c.lengthCm,0)+" cm":"")+
+    '<div class="catch-row">'+(c.photoId?'<img class="catch-photo" data-catch-photo="'+esc(c.photoId)+'" alt="Fangfoto von '+esc(c.species)+'">':"")+
+    '<strong>'+esc(c.species)+(c.lengthCm!=null?" · "+fmt(c.lengthCm,0)+" cm":"")+
     (c.weightG!=null?" · "+fmt(c.weightG,0)+" g":"")+'</strong><div class="catch-meta">'+
     esc(new Date(c.timeAt).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"}))+" Uhr"+
     (c.bait?" · "+esc(c.bait):"")+(c.method?" · "+esc(c.method):"")+
@@ -590,7 +772,22 @@ function renderCatchRows(trip){
 function toggleTripDetails(id){
   const body=$("trip-body-"+id);if(body)body.hidden=!body.hidden;
 }
+function renderTripHistoryItem(trip){
+  const quick=!!trip.quickCatch,catchItem=trip.catches[0];
+  const title=quick?(catchItem?.species||"Einzelfang"):(trip.spotSnapshot?.name||"Angeltrip");
+  const meta=quick?formatDateTime(trip.startAt)+" · "+(trip.spotSnapshot?.name||"Ohne Ortsangabe"):
+    formatDateTime(trip.startAt)+" · "+formatDuration(trip.startAt,trip.endAt);
+  const count=quick?"Einzelfang":trip.catches.length+" Fang"+(trip.catches.length===1?"":"e");
+  return '<article class="trip-history-item'+(quick?' quick-catch-history':'')+'"><button class="trip-history-head" type="button" onclick="toggleTripDetails(\''+esc(trip.id)+'\')"><div><strong>'+
+    esc(title)+'</strong><div class="trip-meta">'+esc(meta)+'</div></div><span class="trip-count">'+esc(count)+' <i class="bi bi-chevron-down"></i></span></button>'+
+    '<div class="trip-history-body" id="trip-body-'+esc(trip.id)+'" hidden>'+renderCatchRows(trip)+
+    (trip.notes?'<div class="trip-notes">Startnotiz: „'+esc(trip.notes)+'“</div>':"")+
+    (trip.endNotes?'<div class="trip-notes">Fazit: „'+esc(trip.endNotes)+'“</div>':"")+
+    (quick?"":'<div class="trip-actions"><button class="danger-quiet" type="button" onclick="deleteTrip(\''+esc(trip.id)+'\')">Trip löschen</button></div>')+
+    '</div></article>';
+}
 function renderLogbook(){
+  clearCatchPhotoUrls();
   const active=getActiveTrip();
   const history=UI_TRIPS.filter(t=>t.status!=="active"||t.endAt).sort((a,b)=>new Date(b.startAt)-new Date(a.startAt));
   $("newTripButton").hidden=!!active;$("logbookEmpty").hidden=!!active||history.length>0;$("logbookTools").hidden=!UI_TRIPS.length;
@@ -602,20 +799,13 @@ function renderLogbook(){
     '<div class="trip-actions"><button class="primary" type="button" onclick="openCatchDialog()"><i class="bi bi-plus-lg"></i> Fang hinzufügen</button>'+
     '<button class="secondary" type="button" onclick="openEndTripDialog()">Trip beenden</button></div>'+
     '<div class="section-title">Fänge in diesem Trip · '+active.catches.length+'</div>'+renderCatchRows(active)+'</article>':"";
-  $("tripHistory").innerHTML=history.length?'<div class="section-title">Abgeschlossene Trips</div>'+history.map(trip=>
-    '<article class="trip-history-item"><button class="trip-history-head" type="button" onclick="toggleTripDetails(\''+esc(trip.id)+'\')"><div><strong>'+
-    esc(trip.spotSnapshot?.name||"Angeltrip")+'</strong><div class="trip-meta">'+esc(formatDateTime(trip.startAt))+
-    ' · '+esc(formatDuration(trip.startAt,trip.endAt))+'</div></div><span class="trip-count">'+trip.catches.length+" Fang"+
-    (trip.catches.length===1?"":"e")+' <i class="bi bi-chevron-down"></i></span></button><div class="trip-history-body" id="trip-body-'+esc(trip.id)+'" hidden>'+
-    renderCatchRows(trip)+(trip.notes?'<div class="trip-notes">Startnotiz: „'+esc(trip.notes)+'“</div>':"")+
-    (trip.endNotes?'<div class="trip-notes">Fazit: „'+esc(trip.endNotes)+'“</div>':"")+
-    '<div class="trip-actions"><button class="danger-quiet" type="button" onclick="deleteTrip(\''+esc(trip.id)+'\')">Trip löschen</button></div></div></article>'
-  ).join(""):"";
+  $("tripHistory").innerHTML=history.length?'<div class="section-title">Logbuch</div>'+history.map(renderTripHistoryItem).join(""):"";
   const dock=$("activeTripDock");dock.hidden=!active;
   dock.innerHTML=active?'<span><strong>Trip läuft</strong> · '+esc(active.spotSnapshot.name)+' · '+esc(formatDuration(active.startAt))+'</span>'+
     '<button class="secondary" type="button" onclick="navigateTo(\'logbook\')">Öffnen</button>':"";
   clearInterval(UI_TRIP_CLOCK_TIMER);
   if(active)UI_TRIP_CLOCK_TIMER=setInterval(renderLogbook,60000);
+  hydrateCatchPhotos();
 }
 function exportTrips(){download("rheincheck-logbuch.json",JSON.stringify(UI_TRIPS,null,2),"application/json");}
 
@@ -653,6 +843,7 @@ function closeChart(){
 
 async function bootstrapApp(){
   CATALOG=normalizeCatalog(FALLBACK_CATALOG);
+  $("quickCatchDialog")?.addEventListener("close",resetQuickCatchPhoto);
   loadSpots();
   await loadStationCatalog();
   if(CURRENT_SPOT_ID)syncSelectionFromActive();

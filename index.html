@@ -8,7 +8,7 @@
   <title>Rhein-Check · Angelbedingungen am deutschen Rhein</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body>
   <header class="app-header">
@@ -218,7 +218,7 @@
       <div class="empty-state compact-empty" id="logbookEmpty">
         <div class="empty-icon" aria-hidden="true"><i class="bi bi-journal-text"></i></div>
         <h3>Noch kein Trip im Logbuch</h3>
-        <p>Starte am gewählten Spot einen Trip. Fänge kannst du währenddessen mit genauer Uhrzeit ergänzen.</p>
+        <p>Starte einen Trip oder dokumentiere einen einzelnen Fang direkt über den Plus-Knopf.</p>
         <button class="primary" type="button" onclick="openStartTripDialog()">Ersten Trip starten</button>
       </div>
 
@@ -242,6 +242,9 @@
     </button>
     <button type="button" class="nav-item" data-tab="data" onclick="navigateTo('data')">
       <span class="nav-icon" aria-hidden="true"><i class="bi bi-graph-up"></i></span><span>Daten</span>
+    </button>
+    <button type="button" class="quick-catch-button" onclick="openQuickCatch()" aria-label="Fang mit Kamera hinzufügen" title="Fang hinzufügen">
+      <i class="bi bi-plus-lg" aria-hidden="true"></i>
     </button>
     <button type="button" class="nav-item" data-tab="map" onclick="navigateTo('map')">
       <span class="nav-icon" aria-hidden="true"><i class="bi bi-map"></i></span><span>Karte</span>
@@ -313,6 +316,20 @@
     </form>
   </dialog>
 
+  <dialog class="sheet-dialog narrow quick-catch-dialog" id="quickCatchDialog">
+    <form method="dialog" class="sheet" onsubmit="return false">
+      <div class="sheet-head">
+        <div><div class="eyebrow">Schnellfang</div><h2>Fang dokumentieren</h2></div>
+        <button class="close-button" type="button" onclick="closeQuickCatchDialog()" aria-label="Schließen"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <p class="sheet-intro">Nimm zuerst ein Foto auf oder wähle ein vorhandenes Bild. Danach ergänzt du die Fangdaten.</p>
+      <div id="quickCatchBody"></div>
+    </form>
+  </dialog>
+
+  <input id="quickCameraInput" class="visually-hidden-file" type="file" accept="image/*" capture="environment" onchange="handleQuickCatchPhoto(event)">
+  <input id="quickUploadInput" class="visually-hidden-file" type="file" accept="image/*" onchange="handleQuickCatchPhoto(event)">
+
   <datalist id="artliste">
     <option>Hecht</option><option>Zander</option><option>Barsch</option><option>Rapfen</option>
     <option>Wels</option><option>Aal</option><option>Karpfen</option><option>Brasse</option>
@@ -335,7 +352,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js?v=8"></script>
-  <script src="ui.js?v=8"></script>
+  <script src="app.js?v=9"></script>
+  <script src="ui.js?v=9"></script>
 </body>
 </html>
